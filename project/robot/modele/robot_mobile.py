@@ -1,6 +1,7 @@
 
 from math import cos, sin
-from robot.moteur import *
+from .moteur import *
+
 
 class RobotMobile:
 
