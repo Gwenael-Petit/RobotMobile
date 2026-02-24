@@ -16,6 +16,7 @@ class RobotMobile:
         self.__rotation = 0.0
         self.moteur = moteur
         self.rayon = rayon
+        self.name = "pixie"
         
         # Trajectoire
         self.trajectoire = []
