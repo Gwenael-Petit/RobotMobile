@@ -2,72 +2,55 @@ class Environnement:
     def __init__(self, largeur=15, hauteur=15):
         self.largeur = largeur      # en mètres
         self.hauteur = hauteur      # en mètres
-        self.robot = None
+        self.robots = []            # ✅ Liste au lieu d'un seul robot
         self.obstacles = []
-        self.rayon_robot = 0.3      # rayon robot en mètres
 
-    def ajouter_robot(self, robot):
-        self.robot = robot
+    def ajouter_robot(self, robot) -> None:
+        self.robots.append(robot)   # ✅ Ajoute à la liste
 
-    def ajouter_obstacle(self, obstacle):
+    def ajouter_obstacle(self, obstacle) -> None:
         self.obstacles.append(obstacle)
 
-    def collision_limites(self):
+    def collision_limites(self, robot) -> bool:  # ✅ Prend le robot en paramètre
         """
-        Vérifie si le robot sort du monde.
+        Vérifie si un robot sort du monde.
         """
-        if self.robot is None:
-            return False
-
-        x, y = self.robot.x, self.robot.y
+        x, y = robot.x, robot.y
 
         return (
-            x - self.rayon_robot < -self.largeur / 2 or
-            x + self.rayon_robot >  self.largeur / 2 or
-            y - self.rayon_robot < -self.hauteur / 2 or
-            y + self.rayon_robot >  self.hauteur / 2
+            x - robot.rayon < -self.largeur / 2 or
+            x + robot.rayon >  self.largeur / 2 or
+            y - robot.rayon < -self.hauteur / 2 or
+            y + robot.rayon >  self.hauteur / 2
         )
 
-    def collision_obstacles(self):
+    def collision_obstacles(self, robot) -> bool:  # ✅ Prend le robot en paramètre
         """
-        Teste la collision avec tous les obstacles (polymorphisme).
+        Teste la collision d'un robot avec tous les obstacles.
         """
         for obstacle in self.obstacles:
-            if obstacle.collision(self.robot.x, self.robot.y, self.rayon_robot):
+            if obstacle.collision(robot):
                 return True
         return False
 
-    def mise_a_jour(self, dt):
+    def mise_a_jour(self, dt) -> None:
         """
+        Met à jour tous les robots avec détection de collision.
         1. Sauvegarde position
         2. Robot calcule mouvement
         3. Vérifie collision
         4. Annule si nécessaire
         """
-        if self.robot is None:
-            return
-
-        # 1️⃣ sauvegarde
-        ancienne_x = self.robot.x
-        ancienne_y = self.robot.y
-        ancienne_orientation = self.robot.orientation
-
-        # 2️⃣ mise à jour cinématique
-        self.robot.mettre_a_jour(dt)
-
-        # 3️⃣ vérification collision
-        if self.collision_limites() or self.collision_obstacles():
-            # 4️⃣ annulation
-            self.robot.x = ancienne_x
-            self.robot.y = ancienne_y
-            self.robot.orientation = ancienne_orientation
-
-    def dessiner(self, vue):
-        """
-        Dessine obstacles + robot
-        """
-        for obstacle in self.obstacles:
-            obstacle.dessiner(vue)
-
-        if self.robot is not None:
-            vue.dessiner_robot(self.robot)
+        for robot in self.robots:  # ✅ Itère sur tous les robots
+            # Sauvegarde
+            etat_sauvegarde = robot.get_etat()  # ✅ Utilise get_etat si disponible
+            
+            # Mise à jour cinématique
+            robot.mettre_a_jour(dt)
+            
+            # Vérification collision
+            if self.collision_limites(robot) or self.collision_obstacles(robot):
+                # Annulation
+                robot.set_etat(etat_sauvegarde)  # ✅ Utilise set_etat si disponible
+                # Ou si pas encore implémenté :
+                # robot.x, robot.y, robot.orientation = etat_sauvegarde

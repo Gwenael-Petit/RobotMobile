@@ -1,7 +1,7 @@
 import math
+import sys
 from project.robot.modele.environnement import Environnement
-from project.robot.modele.obstacle import Obstacle
-from project.robot.modele.obstacle_circulaire import ObstacleCirculaire
+from project.robot.modele.obstacle import Obstacle, ObstacleCirculaire, ObstacleRectangulaire
 from project.robot.modele.robot_mobile import RobotMobile
 from project.robot.modele.moteur import *
 from project.robot.controleur.controleur import *
@@ -70,53 +70,55 @@ pygame.quit()
 
 
 def main():
-    # =========================
-    # INITIALISATION
-    # =========================
-    pygame.init()
-
-    vue = VuePygame(largeur=800, hauteur=600, scale=60)
-    controleur = ControleurClavierPygame()
-
+    # Créer le modèle
+    env = Environnement(largeur=15, hauteur=15)
+    
     moteur = MoteurDifferentiel()
-    robot = RobotMobile(moteur=moteur)
-
-    env = Environnement(largeur=10, hauteur=8)
+    robot = RobotMobile(moteur=moteur, rayon=0.5)
+    robot.x = 0
+    robot.y = 0
     env.ajouter_robot(robot)
+    
+    env.ajouter_obstacle(ObstacleCirculaire(3, 3, 1.0))
+    env.ajouter_obstacle(ObstacleCirculaire(-2, 4, 0.5))
+    env.ajouter_obstacle(ObstacleRectangulaire(-4, -2, 2, 3))
+    env.ajouter_obstacle(ObstacleRectangulaire(0, -4, 5, 1))
 
-    # Obstacles
-    env.ajouter_obstacle(ObstacleCirculaire(2, 1, 0.8))
-    env.ajouter_obstacle(ObstacleCirculaire(-2, -1, 1.0))
-    env.ajouter_obstacle(ObstacleCirculaire(0, -2, 0.6))
-
+    
+    # Créer la vue
+    vue = VuePygame(largeur=800, hauteur=800, scale=50)
+    
+    # Créer le contrôleur
+    controleur = ControleurClavierPygame()
+    
+    # Boucle principale
     running = True
-
-    # =========================
-    # BOUCLE PRINCIPALE
-    # =========================
+    dt = 0.016  # ~60 FPS
+    
     while running:
-        dt = vue.clock.tick(60) / 1000.0  # delta temps en secondes
-
-        # --- Gestion des événements ---
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-
-        # --- Lecture commande clavier ---
-        commande = controleur.lire_commande()
-        robot.commander(**commande)
-
-        # --- Mise à jour simulation ---
+        # Gestion des événements
+        running = vue.gerer_evenements()
+        
+        # Lecture des commandes
+        commandes = controleur.lire_commande()
+        
+        # Application des commandes à tous les robots
+        for robot in env.robots:
+            robot.commander(**commandes)
+        
+        # Mise à jour de la physique (modèle)
         env.mise_a_jour(dt)
-
-        # --- Affichage ---
-        vue.screen.fill((255, 255, 255))  # fond blanc
-        env.dessiner(vue)
-        pygame.display.flip()
-
-    pygame.quit()
-    sys.exit()
+        
+        # Affichage (vue)
+        vue.dessiner(env)  # ✅ C'est ici le changement
+        
+        # Limiter le framerate
+        vue.limiter_fps(60)
+    
+    # Fermeture
+    vue.fermer()
 
 
 if __name__ == "__main__":
     main()
+
