@@ -1,5 +1,13 @@
+from enum import auto, Enum
 from math import cos, sin, pi
 from .moteur import Moteur
+
+class EtatRobot(Enum):
+    EN_ATTENTE  = auto()   # Pas encore démarré
+    VERS_PAQUET = auto()   # Se dirige vers le paquet
+    CHARGE      = auto()   # Transporte le paquet vers le dépôt
+    LIVRE       = auto()   # Mission accomplie
+    EN_PANNE    = auto()   # Autonomie épuisée
 
 
 class RobotMobile:
@@ -7,7 +15,10 @@ class RobotMobile:
     _nb_robots = 0
     _id_counter = 0
 
-    def __init__(self, moteur=None, rayon=0.5):
+    def __init__(self, moteur=None, rayon=0.5, 
+                 vitesse_max: float = 3.0,
+                 capacite_charge: float = 10.0,
+                 autonomie: float = 5000.0):
         if rayon <= 0:
             raise ValueError(f"Le rayon doit être strictement positif, reçu : {rayon}")
         
@@ -17,6 +28,15 @@ class RobotMobile:
         self.moteur = moteur
         self.rayon = rayon
         self.name = "pixie"
+
+        # paramètres
+        self.vitesse_max = vitesse_max          # m/s  [1.0 – 10.0]
+        self.capacite_charge = capacite_charge  # kg   [1.0 – 50.0]
+        self.autonomie = autonomie              # J    [500 – 10000]
+
+        # Métriques collectées
+        self.pas_effectues = 0
+        self.energie_consommee_total = 0.0
         
         # Trajectoire
         self.trajectoire = []
@@ -26,6 +46,28 @@ class RobotMobile:
         RobotMobile._nb_robots += 1
         RobotMobile._id_counter += 1
         self.id = RobotMobile._id_counter
+
+    def reset(self, x: float, y: float) -> None:
+        """Réinitialise le robot pour une nouvelle simulation."""
+        self.__x = x
+        self.__y = y
+        self.__rotation = 0.0
+        self.etat = EtatRobot.VERS_PAQUET
+        self.energie_restante = self.autonomie
+        self.chemin_courant = []
+        self.pas_effectues = 0
+        self.energie_consommee_total = 0.0
+        self.trajectoire = [(x, y)]
+
+    def _consommation_par_pas(self, charge: float = 0.0) -> float:
+        """Énergie consommée par pas (dépend de la vitesse et de la charge)."""
+        k_charge = 0.5
+        return (self.vitesse_max * 10.0 + k_charge * charge) / 0.85
+
+    def _cible_courante(self, environnement) -> tuple[float, float]:
+        if self.etat == EtatRobot.VERS_PAQUET:
+            return environnement.position_paquet
+        return environnement.position_depot
 
     def move_forward(self, distance: float) -> None:
         """Déplace le robot en avant de la distance spécifiée."""
