@@ -1,5 +1,5 @@
 from enum import auto, Enum
-from math import cos, hypot, sin, pi
+from math import atan2, cos, hypot, sin, pi
 from .moteur import Moteur
 
 class EtatRobot(Enum):
