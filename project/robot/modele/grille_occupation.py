@@ -84,7 +84,7 @@ class GrilleOccupation:
 
     @classmethod
     def construct(cls, env, resolution: float = 0.25,
-                              marge: float = 0.4) -> "GrilleOccupation":
+                              marge: float = 0.8) -> "GrilleOccupation":
         """
         Construit une GrilleOccupation à partir d'un Environnement existant
         en marquant les cellules proches d'obstacles comme OCCUPÉES.
