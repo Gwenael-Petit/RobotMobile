@@ -10,7 +10,7 @@ from project.robot.controleur.planificateur_a_star import PlanificateurAStar
 from project.robot.controleur.controleur_pid import ControleurPID
 
 def main_autonome():
-    # ── Environnement ────────────────────────────────────────────────────
+    #  Environnement
     env = Environnement(
         largeur=15, hauteur=15,
         position_paquet=(5.0, 5.0),
@@ -22,11 +22,11 @@ def main_autonome():
     env.ajouter_obstacle(ObstacleRectangulaire(-4, -2, 2, 3))
     env.ajouter_obstacle(ObstacleRectangulaire(0, -4, 5, 1))
 
-    # ── Grille + Planificateur ───────────────────────────────────────────
+    #  Grille + Planificateur 
     grille        = GrilleOccupation.construct(env, resolution=0.25)
     planificateur = PlanificateurAStar(grille)
 
-    # ── Robot ────────────────────────────────────────────────────────────
+    #  Robot 
     robot = RobotMobile(
         moteur=MoteurDifferentiel(),
         rayon=0.5,
@@ -37,7 +37,7 @@ def main_autonome():
     env.ajouter_robot(robot)
     robot.reset(*env.position_depot)
 
-    # ── Attache le PID et le planificateur au robot ──────────────────────
+    #  Attache le PID et le planificateur au robot 
     pid = ControleurPID(v_max=robot.vitesse_max)
     robot._pid           = pid
     robot._planificateur = planificateur
@@ -46,7 +46,7 @@ def main_autonome():
     chemin = planificateur.trouver_chemin(env.position_depot, env.position_paquet)
     pid.set_chemin(chemin)
 
-    # ── Vue ──────────────────────────────────────────────────────────────
+    #  Vue 
     vue = VuePygame(largeur=800, hauteur=800, scale=50)
 
     running = True

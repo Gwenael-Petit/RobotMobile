@@ -19,7 +19,13 @@ def creer_environnement() -> Environnement:
     """Environnement partagé par toutes les simulations."""
     env = Environnement(
         largeur=15, hauteur=15,
-        position_paquet=(5.0,  5.0),
+        positions_colis=[
+            ( 6.0,  6.0),
+            (-4.0,  5.0),
+            ( 5.0, -3.0),
+            ( 0.0,  6.0),
+            (-5.0,  2.0),
+        ],
         position_depot=(-5.0, -5.0),
     )
     env.ajouter_obstacle(ObstacleCirculaire(3, 3, 1.0))
@@ -29,21 +35,38 @@ def creer_environnement() -> Environnement:
     return env
 
 
-def rejouer_robot(meilleur, env, planificateur) -> None:
-    """Rejoue visuellement le meilleur robot trouvé."""
-    print("\nRejoue le meilleur robot...")
+def rejouer_robots(meilleur, autres, env, planificateur) -> None:
+    """Rejoue visuellement le meilleur robot + 3 autres en simultané."""
+    print("\nRejoue les 4 robots...")
 
-    robot = meilleur.to_robot()
+    # Couleurs distinctes pour chaque robot
+    couleurs = [
+        (0,   200, 100),   # vert   — meilleur
+        (80,  160, 255),   # bleu
+        (255, 180,   0),   # orange
+        (220,  50,  50),   # rouge
+    ]
+
+    individus = [meilleur] + autres[:3]
+    robots    = []
+
     env.robots.clear()
-    env.ajouter_robot(robot)
-    robot.reset(*env.position_depot)
+    env.position_paquet = env.positions_colis[0]
 
-    pid = ControleurPID(v_max=robot.vitesse_max)
-    robot._pid           = pid
-    robot._planificateur = planificateur
+    for i, individu in enumerate(individus):
+        robot             = individu.to_robot()
+        robot.couleur     = couleurs[i]  # attribut custom pour la vue
+        robot.label       = f"{'MEILLEUR' if i == 0 else f'Robot {i+1}'}"
+        pid               = ControleurPID(v_max=robot.vitesse_max)
+        robot._pid        = pid
+        robot._planificateur = planificateur
+        robot.reset(*env.position_depot)
+        chemin = planificateur.trouver_chemin(env.position_depot, env.positions_colis[0])
+        pid.set_chemin(chemin)
+        env.ajouter_robot(robot)
+        robots.append(robot)
 
-    chemin = planificateur.trouver_chemin(env.position_depot, env.position_paquet)
-    pid.set_chemin(chemin)
+    print(f"[DEBUG] Nombre de robots : {len(env.robots)}")
 
     vue     = VuePygame(largeur=800, hauteur=800, scale=50)
     running = True
@@ -51,35 +74,33 @@ def rejouer_robot(meilleur, env, planificateur) -> None:
 
     while running:
         running = vue.gerer_evenements()
-        env.mise_a_jour_autonome(dt)
+
+        for robot in robots:
+            if robot.etat not in (EtatRobot.LIVRE, EtatRobot.EN_PANNE):
+                env.mise_a_jour_autonome_robot(robot, dt)
+
         vue.dessiner(env)
         vue.limiter_fps(60)
 
-        if robot.etat in (EtatRobot.LIVRE, EtatRobot.EN_PANNE):
-            m = robot.metriques()
-            print(f"\n  Meilleur robot — résultats visuels :")
-            print(f"  Succès   : {m['succes']}")
-            print(f"  Distance : {m['distance_parcourue']:.2f} m")
-            print(f"  Énergie  : {m['energie_consommee']:.1f} J")
-            print(f"  Coût     : {m['cout']:.2f}")
-            pygame.time.wait(3000)
+        if all(r.etat in (EtatRobot.LIVRE, EtatRobot.EN_PANNE) for r in robots):
+            pygame.time.wait(10000)
             running = False
 
     vue.fermer()
 
 
 def main_genetique():
-    # ── Environnement & planificateur (construits une seule fois) ────────
+    #  Environnement & planificateur 
     env           = creer_environnement()
     grille        = GrilleOccupation.construct(env,
                                                           resolution=0.25,
                                                           marge=0.8)
     planificateur = PlanificateurAStar(grille)
 
-    # ── Algorithme génétique ─────────────────────────────────────────────
+    #  Algorithme génétique 
     ag = AlgorithmeGenetique(
-        taille_population = 20,
-        nb_generations    = 30,
+        taille_population = 15,
+        nb_generations    = 20,
         taux_mutation     = 0.2,
         taux_croisement   = 0.8,
         taille_tournoi    = 3,
@@ -96,12 +117,45 @@ def main_genetique():
 
     meilleur = ag.evoluer(env, planificateur)
 
-    # ── Rapport ──────────────────────────────────────────────────────────
+    #  Rapport 
     ag.afficher_rapport()
 
-    # ── Relecture visuelle du meilleur robot ─────────────────────────────
-    rejouer_robot(meilleur, env, planificateur)
+    #  Relecture visuelle du meilleur robot 
+    population_triee = sorted(ag.population, key=lambda ind: ind.fitness)
+    n = len(population_triee)
+    
+    # Cherche un individu pour chaque capacite_charge différente (1, 2, 3, 4, 5)
+    vus = {ag.meilleur_individu.capacite_charge}
+    autres = []
+    for ind in population_triee:
+        if ind.capacite_charge not in vus:
+            autres.append(ind)
+            vus.add(ind.capacite_charge)
+        if len(autres) == 3:
+            break
+    
+    # Si pas assez de diversité, complète avec n//4, n//2, -1
+    if len(autres) < 3:
+        fallback = [population_triee[n // 4], population_triee[n // 2], population_triee[-10]]
+        for ind in fallback:
+            if len(autres) == 3:
+                break
+            if ind not in autres:
+                autres.append(ind)
+    rejouer_robots(meilleur, autres, env, planificateur)
 
+    while True:
+        print("\nQue voulez-vous faire ?")
+        print("  [1] Rejouer la visualisation")
+        print("  [2] Quitter")
+        choix = input("Choix : ").strip()
+
+        if choix == "1":
+            rejouer_robots(meilleur, autres, env, planificateur)
+        elif choix == "2":
+            break
+        else:
+            print("Choix invalide.")
 
 if __name__ == "__main__":
     main_genetique()

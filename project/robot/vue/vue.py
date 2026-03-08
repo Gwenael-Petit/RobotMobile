@@ -156,51 +156,66 @@ class VuePygame:
     # ------------------------------------------------------------------
 
     def _dessiner_hud(self, environnement: "Environnement") -> None:
-        """Panneau de métriques en temps réel en bas à gauche."""
         if not environnement.robots:
             return
 
-        robot  = environnement.robots[0]
-        lignes = [
-            f"Etat    : {robot.etat.name}",
-            f"Energie : {robot.energie_restante:.0f} / {robot.autonomie:.0f} J",
-            f"Distance: {robot.distance_parcourue:.2f} m",
-            f"Cout    : {robot.calculer_cout():.1f}",
-        ]
-
         padding = 8
-        lh      = 18                          # hauteur de ligne
-        w       = 210
-        h       = padding * 2 + lh * len(lignes)
+        lh      = 18
         x0      = 10
-        y0      = self.hauteur - h - 10
+        y0      = 10   # en haut à gauche
 
-        # Fond semi-transparent
-        surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        surf.fill((20, 20, 20, 170))
-        self.screen.blit(surf, (x0, y0))
-        pygame.draw.rect(self.screen, (80, 80, 80), (x0, y0, w, h), 1)
+        for i, robot in enumerate(environnement.robots):
+            couleur = getattr(robot, 'couleur', (220, 220, 220))
+            label   = getattr(robot, 'label',   f"Robot {i+1}")
+            lignes  = [
+                f"{label}",
+                f"Etat    : {robot.etat.name}",
+                f"Vitesse : {robot.vitesse_max:.1f} m/s",       # ← ici
+                f"Charge  : {robot.capacite_charge} kg",        # ← ici
+                f"Autonom : {robot.autonomie:.0f} J",           # ← ici
+                f"Energie : {robot.energie_restante:.0f}/{robot.autonomie:.0f} J",
+                f"Colis   : {robot.colis_livres}/{robot.colis_a_livrer}",
+                f"Cout    : {robot.calculer_cout():.1f}",
+                f"Temps   : {robot.temps_mission:.1f} s",
+            ]
 
-        for i, ligne in enumerate(lignes):
-            label = self.font_sm.render(ligne, True, (220, 220, 220))
-            self.screen.blit(label, (x0 + padding, y0 + padding + i * lh))
+            w = 220
+            h = padding * 2 + lh * len(lignes)
+
+            surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            surf.fill((20, 20, 20, 170))
+            self.screen.blit(surf, (x0, y0))
+            pygame.draw.rect(self.screen, couleur, (x0, y0, w, h), 2)
+
+            for j, ligne in enumerate(lignes):
+                c     = couleur if j == 0 else (220, 220, 220)
+                texte = self.font_sm.render(ligne, True, c)
+                self.screen.blit(texte, (x0 + padding, y0 + padding + j * lh))
+
+            y0 += h + 8   # empile les HUD verticalement
 
     # ------------------------------------------------------------------
     # Paquet & Dépôt
     # ------------------------------------------------------------------
 
     def _dessiner_paquet(self, environnement: "Environnement") -> None:
-        px, py  = self.convertir_coordonnees(*environnement.position_paquet)
-        taille  = round(0.4 * self.scale)
-        pris    = any(r.etat == EtatRobot.CHARGE for r in environnement.robots)
-        couleur = (180, 130, 0) if pris else self.PAQUET
+        for i, pos in enumerate(environnement.positions_colis):
+            px, py  = self.convertir_coordonnees(*pos)
+            taille  = round(0.4 * self.scale)
+            
+            # Grisé si déjà livré (on estime via le robot le plus avancé)
+            max_livres = max((r.colis_livres for r in environnement.robots), default=0)
+            deja_livre = max_livres > i
+            
+            couleur = (180, 180, 180) if deja_livre else self.PAQUET
+            contour = (100, 100, 100) if deja_livre else (120, 80, 0)
 
-        rect = pygame.Rect(px - taille, py - taille, taille * 2, taille * 2)
-        pygame.draw.rect(self.screen, couleur, rect, border_radius=4)
-        pygame.draw.rect(self.screen, (120, 80, 0), rect, 2, border_radius=4)
-        label = self.font_sm.render("P", True, (80, 40, 0))
-        self.screen.blit(label, (px - label.get_width() // 2,
-                                  py - label.get_height() // 2))
+            rect = pygame.Rect(px - taille, py - taille, taille * 2, taille * 2)
+            pygame.draw.rect(self.screen, couleur, rect, border_radius=4)
+            pygame.draw.rect(self.screen, contour, rect, 2, border_radius=4)
+            label = self.font_sm.render(str(i + 1), True, (80, 40, 0))
+            self.screen.blit(label, (px - label.get_width() // 2,
+                                    py - label.get_height() // 2))
 
     def _dessiner_depot(self, environnement: "Environnement") -> None:
         px, py = self.convertir_coordonnees(*environnement.position_depot)
@@ -247,15 +262,19 @@ class VuePygame:
         pygame.draw.circle(shadow, (0, 0, 0, 40), (r * 1.5, r * 1.5), r)
         self.screen.blit(shadow, (x - r * 1.5 + 4, y - r * 1.5 + 4))
 
-        # Corps
+        # Corps — utilise robot.couleur si défini
+        couleur_base = getattr(robot, 'couleur', (40, 100, 200))
         width = r * 1.2
         for i in range(5):
             offset = i * 0.2
-            shade  = 255 - i * 30
-            pygame.draw.ellipse(self.screen, (40 + i * 10, 100 + i * 10, shade),
+            r_val  = max(0, min(255, couleur_base[0] - i * 20))
+            g_val  = max(0, min(255, couleur_base[1] - i * 20))
+            b_val  = max(0, min(255, couleur_base[2] - i * 20))
+            pygame.draw.ellipse(self.screen, (r_val, g_val, b_val),
                                 (x - width + offset, y - r + offset,
                                  width * 2 - offset * 2, r * 2 - offset * 2))
-        pygame.draw.ellipse(self.screen, (20, 40, 80),
+        contour = tuple(max(0, c - 60) for c in couleur_base)
+        pygame.draw.ellipse(self.screen, contour,
                             (x - width, y - r, width * 2, r * 2), 3)
 
         # Roues

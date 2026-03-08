@@ -78,6 +78,10 @@ class RobotMobile:
         self.nb_recharges = 0
         self.trajectoire = [(x, y)]
         self.temps_mission = 0.0
+        self.colis_livres = 0      
+        self.colis_a_livrer = 5   
+        self.index_colis_courant = 0
+        self.colis_en_cours = 0
 
         if self.moteur is not None:
             self.moteur.commander(v=0.0, omega=0.0)
@@ -193,8 +197,9 @@ class RobotMobile:
         }
 
     def calculer_cout(self) -> float:
-        W_TEMPS    = 1.0 
-        W_ENERGIE  = 0.01 
+        W_TEMPS    = 1.0
+        W_ENERGIE  = 0.05    
+        W_CHARGE   = 8.0     
         PENALITE   = 100_000.0
 
         if self.etat == EtatRobot.EN_PANNE:
@@ -202,7 +207,9 @@ class RobotMobile:
         if self.etat != EtatRobot.LIVRE:
             return PENALITE
 
-        return W_TEMPS * self.temps_mission + W_ENERGIE * self.energie_consommee_total
+        return (W_TEMPS  * self.temps_mission
+            + W_ENERGIE * self.energie_consommee_total
+            + W_CHARGE  * self.capacite_charge)
 
     # ------------------------------------------------------------------
     # Utilitaires de classe

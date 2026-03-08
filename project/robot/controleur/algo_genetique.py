@@ -54,7 +54,7 @@ class Individu:
 
 BORNES = {
     "vitesse_max":     (1.0,   10.0),
-    "capacite_charge": (1.0,   50.0),
+    "capacite_charge": (1,    5),
     "autonomie":       (500.0, 10000.0),
 }
 
@@ -118,13 +118,13 @@ class AlgorithmeGenetique:
         population = self._population_initiale()
 
         for generation in range(self.nb_generations):
-            # ── Évaluation ───────────────────────────────────────────────
+            #  Évaluation 
             self._evaluer_population(population, environnement, planificateur)
 
             # Tri par fitness croissante (meilleur = plus petit coût)
             population.sort(key=lambda ind: ind.fitness)
 
-            # ── Statistiques ─────────────────────────────────────────────
+            #  Statistiques 
             meilleur = population[0]
             moyen    = sum(i.fitness for i in population) / len(population)
             self.historique_meilleur.append(meilleur.fitness)
@@ -144,8 +144,9 @@ class AlgorithmeGenetique:
             if callback:
                 callback(generation, population, meilleur)
 
-            # ── Nouvelle génération ───────────────────────────────────────
+            #  Nouvelle génération 
             population = self._nouvelle_generation(population)
+            self.population = population
 
         return self.meilleur_individu
 
@@ -159,7 +160,7 @@ class AlgorithmeGenetique:
         for _ in range(self.taille_population):
             individu = Individu(
                 vitesse_max=random.uniform(*BORNES["vitesse_max"]),
-                capacite_charge=random.uniform(*BORNES["capacite_charge"]),
+                capacite_charge=random.randint(*BORNES["capacite_charge"]),
                 autonomie=random.uniform(*BORNES["autonomie"]),
             )
             population.append(individu)
@@ -220,6 +221,10 @@ class AlgorithmeGenetique:
 
         enfant1 = Individu(vitesse_max=v1, capacite_charge=c1, autonomie=a1)
         enfant2 = Individu(vitesse_max=v2, capacite_charge=c2, autonomie=a2)
+
+        enfant1.capacite_charge = int(round(max(1, min(5, enfant1.capacite_charge))))
+        enfant2.capacite_charge = int(round(max(1, min(5, enfant2.capacite_charge))))
+
         return enfant1, enfant2
 
     # ------------------------------------------------------------------
@@ -241,6 +246,7 @@ class AlgorithmeGenetique:
                 valeur    = max(borne[0], min(valeur, borne[1]))
                 setattr(individu, gene, valeur)
 
+        individu.capacite_charge = int(round(max(1, min(5, individu.capacite_charge))))
         return individu
 
     # ------------------------------------------------------------------

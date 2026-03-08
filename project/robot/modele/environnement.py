@@ -2,16 +2,25 @@ from math import hypot
 
 
 class Environnement:
-    def __init__(self, largeur=15, hauteur=15, position_paquet: tuple[float, float] = (6.0, 6.0),
-                 position_depot: tuple[float, float] = (-6.0, -6.0)):
-        self.largeur = largeur      # en mètres
-        self.hauteur = hauteur      # en mètres
-        self.robots = []          
+    def __init__(self, largeur=15, hauteur=15,
+             positions_colis: list[tuple[float, float]] | None = None,
+             position_depot: tuple[float, float] = (-6.0, -6.0)):
+        self.largeur = largeur
+        self.hauteur = hauteur
+        self.robots = []
         self.obstacles = []
 
         # Attributs pour la mission
-        self.position_paquet = position_paquet   # (x, y) du paquet à récupérer
-        self.position_depot  = position_depot
+        self.position_depot = position_depot
+        self.positions_colis = positions_colis or [
+            ( 6.0,  6.0),
+            (-4.0,  5.0),
+            ( 5.0, -3.0),
+            ( 0.0,  6.0),
+            (-5.0,  2.0),
+        ]
+        # position_paquet pointe vers le prochain colis à récupérer
+        self.position_paquet = self.positions_colis[0]
 
     # ------------------------------------------------------------------
     # Gestion robots & obstacles
@@ -91,6 +100,44 @@ class Environnement:
 
             self._verifier_transitions(robot)
 
+    def mise_a_jour_autonome_robot(self, robot, dt: float) -> None:
+        """Met à jour un robot unique avec sa propre position de colis."""
+        from .robot_mobile import EtatRobot
+
+        if not hasattr(robot, '_pid') or robot._pid is None:
+            return
+        if robot.etat in (EtatRobot.LIVRE, EtatRobot.EN_PANNE):
+            return
+
+        if robot.etat == EtatRobot.EN_RECHARGE:
+            termine = robot.recharger(dt)
+            if termine:
+                robot.etat = robot._etat_avant_recharge
+                robot._pid.set_chemin([])
+            return
+
+        if (robot.besoin_recharge() and
+                robot.etat not in (EtatRobot.VERS_BASE, EtatRobot.EN_RECHARGE)):
+            robot._etat_avant_recharge = robot.etat
+            robot.etat = EtatRobot.VERS_BASE
+            robot._pid.set_chemin([])
+
+        if robot._pid.est_arrive():
+            self._recalculer_chemin_robot(robot)
+
+        commande = robot._pid.calculer_commande(robot.x, robot.y, robot.orientation)
+        robot.commander(**commande)
+
+        etat_sauvegarde = robot.get_etat()
+        robot.mettre_a_jour(dt)
+
+        if self.collision_limites(robot) or self.collision_obstacles(robot):
+            robot.set_etat(etat_sauvegarde)
+            robot.commander(v=0.0, omega=0.0)
+            self._recalculer_chemin_robot(robot)
+
+        self._verifier_transitions_robot(robot)
+
     def _cible_courante(self, robot) -> tuple[float, float]:
         from .robot_mobile import EtatRobot
         if robot.etat == EtatRobot.VERS_PAQUET:
@@ -118,8 +165,70 @@ class Environnement:
         elif robot.etat == EtatRobot.CHARGE:
             dx, dy = self.position_depot
             if hypot(robot.x - dx, robot.y - dy) < robot.rayon + 0.4:
-                robot.etat = EtatRobot.LIVRE
+                robot.colis_livres += robot.capacite_charge
+                if robot.colis_livres >= robot.colis_a_livrer:
+                    robot.etat = EtatRobot.LIVRE
+                    robot.commander(v=0.0, omega=0.0)
+                else:
+                    # Prochain colis = index basé sur colis déjà récupérés
+                    index = min(robot.colis_livres, len(self.positions_colis) - 1)
+                    self.position_paquet = self.positions_colis[index]
+                    robot.etat = EtatRobot.VERS_PAQUET
+                    robot._pid.set_chemin([])
+
+        elif robot.etat == EtatRobot.VERS_BASE:
+            dx, dy = self.position_depot
+            if hypot(robot.x - dx, robot.y - dy) < robot.rayon + 0.4:
+                robot.etat = EtatRobot.EN_RECHARGE
                 robot.commander(v=0.0, omega=0.0)
+
+    def _recalculer_chemin_robot(self, robot) -> None:
+        """Recalcule vers la cible propre au robot."""
+        if not hasattr(robot, '_planificateur') or robot._planificateur is None:
+            return
+        cible  = self._cible_courante_robot(robot)
+        chemin = robot._planificateur.trouver_chemin((robot.x, robot.y), cible)
+        robot._pid.set_chemin(chemin)
+
+    def _cible_courante_robot(self, robot) -> tuple[float, float]:
+        """Cible selon l'état du robot et son index de colis."""
+        from .robot_mobile import EtatRobot
+        if robot.etat == EtatRobot.VERS_PAQUET:
+            index = min(robot.index_colis_courant, len(self.positions_colis) - 1)
+            return self.positions_colis[index]
+        return self.position_depot
+
+    def _verifier_transitions_robot(self, robot) -> None:
+        """Transitions d'état pour un robot individuel."""
+        from .robot_mobile import EtatRobot
+
+        if robot.etat == EtatRobot.VERS_PAQUET:
+            px, py = self.positions_colis[robot.index_colis_courant]
+            if hypot(robot.x - px, robot.y - py) < robot.rayon + 0.4:
+                robot.colis_en_cours += 1
+                robot.index_colis_courant += 1
+
+                if (robot.colis_en_cours >= robot.capacite_charge or
+                        robot.index_colis_courant >= robot.colis_a_livrer):
+                    # Chargé à max ou plus de colis à ramasser → retour base
+                    robot.etat = EtatRobot.CHARGE
+                    robot._pid.set_chemin([])
+                else:
+                    # Encore de la place → prochain colis directement
+                    robot.etat = EtatRobot.VERS_PAQUET
+                    self._recalculer_chemin_robot(robot)  # recalcul immédiat
+
+        elif robot.etat == EtatRobot.CHARGE:
+            dx, dy = self.position_depot
+            if hypot(robot.x - dx, robot.y - dy) < robot.rayon + 0.4:
+                robot.colis_livres += robot.colis_en_cours
+                robot.colis_en_cours = 0
+                if robot.colis_livres >= robot.colis_a_livrer:
+                    robot.etat = EtatRobot.LIVRE
+                    robot.commander(v=0.0, omega=0.0)
+                else:
+                    robot.etat = EtatRobot.VERS_PAQUET
+                    self._recalculer_chemin_robot(robot)  # recalcul immédiat
 
         elif robot.etat == EtatRobot.VERS_BASE:
             dx, dy = self.position_depot
@@ -135,7 +244,7 @@ class Environnement:
                       planificateur,
                       position_depart: tuple[float, float] | None = None,
                       dt: float = 0.05,
-                      max_steps: int = 20_000) -> dict:
+                      max_steps: int = 3000) -> dict:
         """
         Lance une simulation complète pour un robot autonome.
 
@@ -154,6 +263,7 @@ class Environnement:
 
         depart = position_depart or self.position_depot
         robot.reset(*depart)
+        self.position_paquet = self.positions_colis[0]
 
         self.robots.append(robot)
 

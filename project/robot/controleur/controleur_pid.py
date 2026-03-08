@@ -6,7 +6,7 @@ class ControleurPID:
     def __init__(self,
                  kp_lin: float    = 1.5,
                  kp_ang: float    = 3.0,
-                 tolerance: float = 0.3,
+                 tolerance: float = 0.5,
                  v_max: float     = 5.0,
                  omega_max: float = 3.0):
         self.kp_lin    = kp_lin
@@ -33,20 +33,9 @@ class ControleurPID:
         return self._index_waypoint >= len(self._chemin)
 
     def calculer_commande(self,
-                          x: float,
-                          y: float,
-                          theta: float) -> dict[str, float]:
-        """
-        Calcule la commande (v, omega) pour avancer vers le prochain waypoint.
-
-        Args:
-            x     : position x du robot (mètres)
-            y     : position y du robot (mètres)
-            theta : orientation du robot (radians)
-
-        Returns:
-            dict {"v": ..., "omega": ...} compatible avec robot.commander()
-        """
+                      x: float,
+                      y: float,
+                      theta: float) -> dict[str, float]:
         if self.est_arrive():
             return {"v": 0.0, "omega": 0.0}
 
@@ -67,23 +56,24 @@ class ControleurPID:
             dy = yc - y
             distance = math.hypot(dx, dy)
 
-        # ── Commande linéaire ────────────────────────────────────────────
-        v = self.kp_lin * distance
-        v = max(-self.v_max, min(v, self.v_max))
-
-        # ── Commande angulaire ───────────────────────────────────────────
+        #  Commande angulaire 
         theta_des = math.atan2(dy, dx)
         e_theta   = theta_des - theta
-
-        # Normalisation dans [-π, π]
-        e_theta = (e_theta + math.pi) % (2 * math.pi) - math.pi
+        e_theta   = (e_theta + math.pi) % (2 * math.pi) - math.pi
 
         omega = self.kp_ang * e_theta
         omega = max(-self.omega_max, min(omega, self.omega_max))
 
-        # Si le robot est très mal orienté, ralentir pour tourner d'abord
-        if abs(e_theta) > math.pi / 2:
-            v *= 0.3
+        #  Commande linéaire — exploite vraiment v_max 
+        if abs(e_theta) < math.pi / 6:
+            # Bien orienté → pleine vitesse
+            v = self.v_max
+        elif abs(e_theta) > math.pi / 2:
+            # Mal orienté → tourne sur place
+            v = 0.0
+        else:
+            # Intermédiaire → ralentit proportionnellement
+            v = self.v_max * (1 - abs(e_theta) / (math.pi / 2))
 
         return {"v": v, "omega": omega}
 
