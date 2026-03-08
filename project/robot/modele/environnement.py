@@ -56,7 +56,22 @@ class Environnement:
             if robot.etat in (EtatRobot.LIVRE, EtatRobot.EN_PANNE):
                 continue
 
+            # Recharge en cours : pas de déplacement
+            if robot.etat == EtatRobot.EN_RECHARGE:
+                termine = robot.recharger(dt)
+                if termine:
+                    robot.etat = robot._etat_avant_recharge
+                    robot._pid.set_chemin([])
+                continue
+
             pid = robot._pid
+
+            # Détection du besoin de recharge
+            if (robot.besoin_recharge() and
+                    robot.etat not in (EtatRobot.VERS_BASE, EtatRobot.EN_RECHARGE)):
+                robot._etat_avant_recharge = robot.etat
+                robot.etat = EtatRobot.VERS_BASE
+                robot._pid.set_chemin([])
 
             if pid.est_arrive():
                 self._recalculer_chemin(robot)
@@ -106,6 +121,12 @@ class Environnement:
                 robot.etat = EtatRobot.LIVRE
                 robot.commander(v=0.0, omega=0.0)
 
+        elif robot.etat == EtatRobot.VERS_BASE:
+            dx, dy = self.position_depot
+            if hypot(robot.x - dx, robot.y - dy) < robot.rayon + 0.4:
+                robot.etat = EtatRobot.EN_RECHARGE
+                robot.commander(v=0.0, omega=0.0)
+
     # ------------------------------------------------------------------
     # Simulation complète d'un robot
     # ------------------------------------------------------------------
@@ -129,10 +150,12 @@ class Environnement:
             dict métriques : succes, pas_effectues, energie_consommee, cout, etat_final
         """
         from .robot_mobile import EtatRobot
-        from controleur.controleur_pid import ControleurPID
+        from project.robot.controleur.controleur_pid import ControleurPID
 
         depart = position_depart or self.position_depot
         robot.reset(*depart)
+
+        self.robots.append(robot)
 
         # Attache planificateur et PID au robot
         pid = ControleurPID(v_max=robot.vitesse_max)
@@ -143,10 +166,16 @@ class Environnement:
         chemin = planificateur.trouver_chemin(depart, self.position_paquet)
         pid.set_chemin(chemin)
 
+        nb_steps = 0
         for _ in range(max_steps):
             if robot.etat in (EtatRobot.LIVRE, EtatRobot.EN_PANNE):
                 break
             self.mise_a_jour_autonome(dt)
+            nb_steps += 1
+
+        print(f"  [DEBUG] steps={nb_steps}/{max_steps}, etat={robot.etat.name}, "
+            f"distance={robot.distance_parcourue:.1f}, "
+            f"cout={robot.calculer_cout():.1f}")
 
         return robot.metriques()
 

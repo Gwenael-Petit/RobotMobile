@@ -8,7 +8,14 @@ class EtatRobot(Enum):
     VERS_PAQUET = auto()   # Se dirige vers le paquet
     CHARGE      = auto()   # Transporte le paquet vers le dépôt
     LIVRE       = auto()   # Mission accomplie
-    EN_PANNE    = auto()   # Autonomie épuisée
+    EN_PANNE    = auto()   # Autonomie épuisée (garde-fou)
+    VERS_BASE   = auto()   # Retourne à la base pour recharge
+    EN_RECHARGE = auto()   # Recharge progressive à la base
+
+
+# Seuil d'énergie (ratio) en dessous duquel le robot rentre se recharger
+SEUIL_RECHARGE   = 0.20     # 20% de l'autonomie restante
+VITESSE_RECHARGE = 500.0    # Joules rechargés par seconde
 
 
 class RobotMobile:
@@ -38,13 +45,16 @@ class RobotMobile:
         # État de mission
         self.etat             = EtatRobot.EN_ATTENTE
         self.energie_restante = autonomie
+        self._etat_avant_recharge: EtatRobot = EtatRobot.VERS_PAQUET
         # Métriques collectées
-        self.pas_effectues = 0
+        self.distance_parcourue = 0.0
         self.energie_consommee_total = 0.0
+        self.nb_recharges = 0
+
         
         # Trajectoire
         self.trajectoire = []
-        self.max_trajectoire = 50
+        self.max_trajectoire = 100
         
         # Compteurs
         RobotMobile._nb_robots += 1
@@ -62,12 +72,42 @@ class RobotMobile:
         self.__rotation = 0.0
         self.etat = EtatRobot.VERS_PAQUET
         self.energie_restante = self.autonomie
+        self._etat_avant_recharge    = EtatRobot.VERS_PAQUET
         self.distance_parcourue = 0.0
         self.energie_consommee_total = 0.0
+        self.nb_recharges = 0
         self.trajectoire = [(x, y)]
+        self.temps_mission = 0.0
 
         if self.moteur is not None:
             self.moteur.commander(v=0.0, omega=0.0)
+
+    # ------------------------------------------------------------------
+    # Recharge progressive
+    # ------------------------------------------------------------------
+
+    def recharger(self, dt: float) -> bool:
+        """
+        Recharge le robot progressivement.
+        Appelée par Environnement quand le robot est EN_RECHARGE.
+
+        Returns:
+            True  → recharge terminée (énergie pleine)
+            False → recharge en cours
+        """
+        self.energie_restante = min(
+            self.autonomie,
+            self.energie_restante + VITESSE_RECHARGE * dt
+        )
+        if self.energie_restante >= self.autonomie:
+            self.energie_restante = self.autonomie
+            self.nb_recharges    += 1
+            return True
+        return False
+
+    def besoin_recharge(self) -> bool:
+        """Retourne True si l'énergie est sous le seuil critique."""
+        return (self.energie_restante / self.autonomie) < SEUIL_RECHARGE
 
     # ------------------------------------------------------------------
     # Mise à jour 
@@ -92,6 +132,7 @@ class RobotMobile:
         from math import hypot
         dp = hypot(self.__x - x_avant, self.__y - y_avant)
         self.distance_parcourue += dp
+        self.temps_mission += dt
 
         # Consommation d'énergie
         charge = self.capacite_charge if self.etat == EtatRobot.CHARGE else 0.0
@@ -146,24 +187,22 @@ class RobotMobile:
             "succes"            : self.etat == EtatRobot.LIVRE,
             "distance_parcourue": self.distance_parcourue,
             "energie_consommee" : self.energie_consommee_total,
+            "nb_recharges"       : self.nb_recharges,
             "cout"              : self.calculer_cout(),
             "etat_final"        : self.etat.name,
         }
 
     def calculer_cout(self) -> float:
-        """
-        Fonction de coût à minimiser par l'algorithme génétique.
-        coût = w_dist * distance + w_energie * énergie + pénalité_si_échec
-        """
-        W_DISTANCE = 1.0
-        W_ENERGIE  = 0.01
+        W_TEMPS    = 1.0 
+        W_ENERGIE  = 0.01 
         PENALITE   = 100_000.0
 
+        if self.etat == EtatRobot.EN_PANNE:
+            return PENALITE
         if self.etat != EtatRobot.LIVRE:
             return PENALITE
 
-        return (W_DISTANCE * self.distance_parcourue +
-                W_ENERGIE  * self.energie_consommee_total)
+        return W_TEMPS * self.temps_mission + W_ENERGIE * self.energie_consommee_total
 
     # ------------------------------------------------------------------
     # Utilitaires de classe
@@ -218,7 +257,9 @@ class RobotMobile:
         """Affiche la position du robot dans la console."""
         print(f"Robot #{self.id}: (x={self.x:.2f}, y={self.y:.2f}, "
               f"θ={self.orientation:.2f} rad, état={self.etat.name}, "
-              f"énergie={self.energie_restante:.0f} J)")
+              f"énergie={self.energie_restante:.0f} J)"
+              f"recharges={self.nb_recharges})")
+        
 
     def __str__(self) -> str:
         return (f"Robot(x={self.x:.2f}, y={self.y:.2f}, "

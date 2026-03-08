@@ -34,11 +34,13 @@ class VuePygame:
 
     # Couleurs état robot
     ETAT_COULEURS = {
-        "EN_ATTENTE" : (150, 150, 150),
-        "VERS_PAQUET": (80,  160, 255),
-        "CHARGE"     : (255, 180,   0),
-        "LIVRE"      : (0,   200, 100),
-        "EN_PANNE"   : (220,  50,  50),
+        "EN_ATTENTE"  : (150, 150, 150),
+        "VERS_PAQUET" : (80,  160, 255),
+        "CHARGE"      : (255, 180,   0),
+        "LIVRE"       : (0,   200, 100),
+        "EN_PANNE"    : (220,  50,  50),
+        "VERS_BASE"   : (220, 100, 220),
+        "EN_RECHARGE" : (100, 220, 255),
     }
 
     def __init__(self, largeur: int = 800, hauteur: int = 800, scale: int = 50):
