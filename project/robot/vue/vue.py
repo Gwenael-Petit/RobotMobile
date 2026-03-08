@@ -14,19 +14,32 @@ class VueTerminal:
             self.dessiner_robot(robot)
 
     def dessiner_robot(self, robot: "RobotMobile") -> None:
-        print(f"Robot #{robot.id}: (x={robot.x:.2f}, y={robot.y:.2f}, "
+        print(f"Robot: (x={robot.x:.2f}, y={robot.y:.2f}, "
               f"orientation={math.degrees(robot.orientation):.1f}°, "
-              f"état={robot.etat.name}, énergie={robot.energie_restante:.0f} J)")
+              f"état={robot.etat.name})")
 
 
 class VuePygame:
     """Vue graphique pygame."""
 
-    # Palette de couleurs
-    COULEUR_FOND    = (245, 245, 240)
-    COULEUR_PAQUET  = (255, 180, 0)     
-    COULEUR_DEPOT   = (0, 200, 100)     
-    COULEUR_TEXTE   = (40, 40, 40)
+    # ── Couleurs ─────────────────────────────────────────────────────────
+    FOND          = (245, 245, 240)
+    GRILLE        = (220, 220, 215)
+    CHEMIN        = (80, 160, 255)      # bleu clair — chemin A*
+    WAYPOINT      = (50, 120, 220)      # bleu foncé — points du chemin
+    PAQUET        = (255, 180, 0)       # orange
+    DEPOT         = (0, 200, 100)       # vert
+    TEXTE         = (30, 30, 30)
+    HUD_FOND      = (20, 20, 20, 180)   # fond semi-transparent HUD
+
+    # Couleurs état robot
+    ETAT_COULEURS = {
+        "EN_ATTENTE" : (150, 150, 150),
+        "VERS_PAQUET": (80,  160, 255),
+        "CHARGE"     : (255, 180,   0),
+        "LIVRE"      : (0,   200, 100),
+        "EN_PANNE"   : (220,  50,  50),
+    }
 
     def __init__(self, largeur: int = 800, hauteur: int = 800, scale: int = 50):
         pygame.init()
@@ -34,9 +47,14 @@ class VuePygame:
         pygame.display.set_caption("Simulation Robot Mobile")
         self.largeur = largeur
         self.hauteur = hauteur
-        self.scale = scale
-        self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("monospace", 14)
+        self.scale   = scale
+        self.clock   = pygame.time.Clock()
+        self.font_sm = pygame.font.SysFont("monospace", 13)
+        self.font_md = pygame.font.SysFont("monospace", 15, bold=True)
+
+    # ------------------------------------------------------------------
+    # Conversion coordonnées
+    # ------------------------------------------------------------------
 
     def convertir_coordonnees(self, x: float, y: float) -> tuple[int, int]:
         px = round(self.largeur / 2 + x * self.scale)
@@ -48,124 +66,190 @@ class VuePygame:
     # ------------------------------------------------------------------
 
     def dessiner(self, environnement: "Environnement") -> None:
-        self.screen.fill(self.COULEUR_FOND)
+        self.screen.fill(self.FOND)
         self._dessiner_grille(environnement)
         self._dessiner_paquet(environnement)
         self._dessiner_depot(environnement)
+
         for obstacle in environnement.obstacles:
             self.dessiner_obstacle(obstacle)
+
         for robot in environnement.robots:
+            self._dessiner_chemin(robot)       # ← chemin A* SOUS le robot
             self.dessiner_robot(robot)
-            self._dessiner_hud(robot)
+            self._dessiner_barre_energie(robot)
+            self._dessiner_etat(robot)
+
+        self._dessiner_hud(environnement)      # ← métriques en bas à gauche
+
         pygame.display.flip()
+
+    # ------------------------------------------------------------------
+    # 1. Chemin A* ← NOUVEAU
+    # ------------------------------------------------------------------
+
+    def _dessiner_chemin(self, robot: "RobotMobile") -> None:
+        """Trace le chemin A* restant à parcourir."""
+        if not hasattr(robot, '_pid') or robot._pid is None:
+            return
+        chemin = robot._pid.chemin
+        if not chemin or len(chemin) < 2:
+            return
+
+        idx = robot._pid._index_waypoint
+
+        # Segment robot → prochain waypoint
+        if idx < len(chemin):
+            px_robot, py_robot = self.convertir_coordonnees(robot.x, robot.y)
+            px_next,  py_next  = self.convertir_coordonnees(*chemin[idx])
+            pygame.draw.line(self.screen, self.CHEMIN,
+                             (px_robot, py_robot), (px_next, py_next), 2)
+
+        # Reste du chemin
+        for i in range(max(idx, 1), len(chemin)):
+            p1 = self.convertir_coordonnees(*chemin[i - 1])
+            p2 = self.convertir_coordonnees(*chemin[i])
+            pygame.draw.line(self.screen, self.CHEMIN, p1, p2, 2)
+
+        # Waypoints
+        for i in range(idx, len(chemin)):
+            px, py = self.convertir_coordonnees(*chemin[i])
+            pygame.draw.circle(self.screen, self.WAYPOINT, (px, py), 3)
+
+    # ------------------------------------------------------------------
+    # 2. Barre d'énergie + état ← NOUVEAU
+    # ------------------------------------------------------------------
+
+    def _dessiner_barre_energie(self, robot: "RobotMobile") -> None:
+        """Barre d'énergie colorée au-dessus du robot."""
+        px, py = self.convertir_coordonnees(robot.x, robot.y)
+        r      = round(robot.rayon * self.scale)
+
+        barre_w = r * 2
+        barre_h = 6
+        bx      = px - r
+        by      = py - r - 14
+
+        ratio  = max(0.0, robot.energie_restante / robot.autonomie)
+        couleur = (int(255 * (1 - ratio)), int(200 * ratio), 0)
+
+        # Fond gris
+        pygame.draw.rect(self.screen, (180, 180, 180), (bx, by, barre_w, barre_h))
+        # Niveau d'énergie
+        pygame.draw.rect(self.screen, couleur, (bx, by, round(barre_w * ratio), barre_h))
+        # Contour
+        pygame.draw.rect(self.screen, (80, 80, 80), (bx, by, barre_w, barre_h), 1)
+
+    def _dessiner_etat(self, robot: "RobotMobile") -> None:
+        """Texte d'état coloré au-dessus de la barre d'énergie."""
+        px, py  = self.convertir_coordonnees(robot.x, robot.y)
+        r       = round(robot.rayon * self.scale)
+        couleur = self.ETAT_COULEURS.get(robot.etat.name, self.TEXTE)
+
+        label = self.font_sm.render(robot.etat.name, True, couleur)
+        self.screen.blit(label, (px - label.get_width() // 2, py - r - 28))
+
+    # ------------------------------------------------------------------
+    # 3. HUD métriques ← NOUVEAU
+    # ------------------------------------------------------------------
+
+    def _dessiner_hud(self, environnement: "Environnement") -> None:
+        """Panneau de métriques en temps réel en bas à gauche."""
+        if not environnement.robots:
+            return
+
+        robot  = environnement.robots[0]
+        lignes = [
+            f"Etat    : {robot.etat.name}",
+            f"Energie : {robot.energie_restante:.0f} / {robot.autonomie:.0f} J",
+            f"Distance: {robot.distance_parcourue:.2f} m",
+            f"Cout    : {robot.calculer_cout():.1f}",
+        ]
+
+        padding = 8
+        lh      = 18                          # hauteur de ligne
+        w       = 210
+        h       = padding * 2 + lh * len(lignes)
+        x0      = 10
+        y0      = self.hauteur - h - 10
+
+        # Fond semi-transparent
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        surf.fill((20, 20, 20, 170))
+        self.screen.blit(surf, (x0, y0))
+        pygame.draw.rect(self.screen, (80, 80, 80), (x0, y0, w, h), 1)
+
+        for i, ligne in enumerate(lignes):
+            label = self.font_sm.render(ligne, True, (220, 220, 220))
+            self.screen.blit(label, (x0 + padding, y0 + padding + i * lh))
 
     # ------------------------------------------------------------------
     # Paquet & Dépôt
     # ------------------------------------------------------------------
 
     def _dessiner_paquet(self, environnement: "Environnement") -> None:
-        """Dessine le paquet à récupérer (carré orange avec 'P')."""
-        px, py = self.convertir_coordonnees(*environnement.position_paquet)
-        taille = round(0.4 * self.scale)
-
-        # Vérifie si un robot a déjà récupéré le paquet
-        paquet_pris = any(r.etat == EtatRobot.CHARGE for r in environnement.robots)
-        couleur = (180, 130, 0) if paquet_pris else self.COULEUR_PAQUET
+        px, py  = self.convertir_coordonnees(*environnement.position_paquet)
+        taille  = round(0.4 * self.scale)
+        pris    = any(r.etat == EtatRobot.CHARGE for r in environnement.robots)
+        couleur = (180, 130, 0) if pris else self.PAQUET
 
         rect = pygame.Rect(px - taille, py - taille, taille * 2, taille * 2)
         pygame.draw.rect(self.screen, couleur, rect, border_radius=4)
         pygame.draw.rect(self.screen, (120, 80, 0), rect, 2, border_radius=4)
-
-        label = self.font.render("P", True, (80, 40, 0))
+        label = self.font_sm.render("P", True, (80, 40, 0))
         self.screen.blit(label, (px - label.get_width() // 2,
                                   py - label.get_height() // 2))
 
     def _dessiner_depot(self, environnement: "Environnement") -> None:
-        """Dessine le point de dépôt (cercle vert avec 'D')."""
         px, py = self.convertir_coordonnees(*environnement.position_depot)
-        rayon = round(0.5 * self.scale)
-
-        pygame.draw.circle(self.screen, self.COULEUR_DEPOT, (px, py), rayon)
+        rayon  = round(0.5 * self.scale)
+        pygame.draw.circle(self.screen, self.DEPOT, (px, py), rayon)
         pygame.draw.circle(self.screen, (0, 120, 60), (px, py), rayon, 2)
-
-        label = self.font.render("D", True, (0, 60, 30))
+        label = self.font_sm.render("D", True, (0, 60, 30))
         self.screen.blit(label, (px - label.get_width() // 2,
                                   py - label.get_height() // 2))
-
-    # ------------------------------------------------------------------
-    # HUD (état + énergie du robot)
-    # ------------------------------------------------------------------
-
-    def _dessiner_hud(self, robot: "RobotMobile") -> None:
-        """Affiche l'état et la barre d'énergie au-dessus du robot."""
-        px, py = self.convertir_coordonnees(robot.x, robot.y)
-        r = round(robot.rayon * self.scale)
-
-        # État textuel
-        etat_label = self.font.render(robot.etat.name, True, self.COULEUR_TEXTE)
-        self.screen.blit(etat_label, (px - etat_label.get_width() // 2, py - r - 28))
-
-        # Barre d'énergie
-        barre_w = r * 2
-        barre_h = 6
-        barre_x = px - r
-        barre_y = py - r - 14
-
-        ratio = max(0.0, robot.energie_restante / robot.autonomie)
-        couleur_barre = (
-            int(255 * (1 - ratio)),
-            int(200 * ratio),
-            0
-        )
-
-        pygame.draw.rect(self.screen, (180, 180, 180),
-                         (barre_x, barre_y, barre_w, barre_h))
-        pygame.draw.rect(self.screen, couleur_barre,
-                         (barre_x, barre_y, round(barre_w * ratio), barre_h))
-        pygame.draw.rect(self.screen, (80, 80, 80),
-                         (barre_x, barre_y, barre_w, barre_h), 1)
 
     # ------------------------------------------------------------------
     # Grille de fond
     # ------------------------------------------------------------------
 
     def _dessiner_grille(self, environnement: "Environnement") -> None:
-        """Dessine une grille de fond légère."""
-        couleur_grille = (220, 220, 215)
         for x in range(-environnement.largeur // 2, environnement.largeur // 2 + 1):
             px, _ = self.convertir_coordonnees(x, 0)
-            pygame.draw.line(self.screen, couleur_grille, (px, 0), (px, self.hauteur))
+            pygame.draw.line(self.screen, self.GRILLE, (px, 0), (px, self.hauteur))
         for y in range(-environnement.hauteur // 2, environnement.hauteur // 2 + 1):
             _, py = self.convertir_coordonnees(0, y)
-            pygame.draw.line(self.screen, couleur_grille, (0, py), (self.largeur, py))
+            pygame.draw.line(self.screen, self.GRILLE, (0, py), (self.largeur, py))
 
     # ------------------------------------------------------------------
-    # Robot
+    # Robot (inchangé — ton rendu original)
     # ------------------------------------------------------------------
 
     def dessiner_robot(self, robot: "RobotMobile") -> None:
-        x, y = self.convertir_coordonnees(robot.x, robot.y)
-        r = round(robot.rayon * self.scale)
+        x, y  = self.convertir_coordonnees(robot.x, robot.y)
+        r     = round(robot.rayon * self.scale)
         angle = robot.orientation
 
         # Trajectoire
         if len(robot.trajectoire) > 1:
-            points = [self.convertir_coordonnees(px, py) for px, py in robot.trajectoire]
+            points = [self.convertir_coordonnees(px, py)
+                      for px, py in robot.trajectoire]
             for i in range(len(points) - 1):
-                alpha = int(180 * (i / len(points)))
+                alpha  = int(180 * (i / len(points)))
                 couleur = (alpha // 3, alpha // 2, min(alpha + 80, 255))
-                pygame.draw.line(self.screen, couleur, points[i], points[i + 1], 2)
+                pygame.draw.line(self.screen, couleur,
+                                 points[i], points[i + 1], 2)
 
         # Ombre
-        shadow_surface = pygame.Surface((r * 3, r * 3), pygame.SRCALPHA)
-        pygame.draw.circle(shadow_surface, (0, 0, 0, 40), (r * 1.5, r * 1.5), r)
-        self.screen.blit(shadow_surface, (x - r * 1.5 + 4, y - r * 1.5 + 4))
+        shadow = pygame.Surface((r * 3, r * 3), pygame.SRCALPHA)
+        pygame.draw.circle(shadow, (0, 0, 0, 40), (r * 1.5, r * 1.5), r)
+        self.screen.blit(shadow, (x - r * 1.5 + 4, y - r * 1.5 + 4))
 
         # Corps
         width = r * 1.2
         for i in range(5):
             offset = i * 0.2
-            shade = 255 - i * 30
+            shade  = 255 - i * 30
             pygame.draw.ellipse(self.screen, (40 + i * 10, 100 + i * 10, shade),
                                 (x - width + offset, y - r + offset,
                                  width * 2 - offset * 2, r * 2 - offset * 2))
@@ -173,18 +257,16 @@ class VuePygame:
                             (x - width, y - r, width * 2, r * 2), 3)
 
         # Roues
-        roue_width  = r // 3
-        roue_height = r // 2
-        roue_offset = r * 0.85
+        roue_w = r // 3
+        roue_h = r // 2
         for side in [-1, 1]:
-            roue_x = x + round(roue_offset * math.cos(angle + side * math.pi / 2))
-            roue_y = y - round(roue_offset * math.sin(angle + side * math.pi / 2))
+            rx = x + round(r * 0.85 * math.cos(angle + side * math.pi / 2))
+            ry = y - round(r * 0.85 * math.sin(angle + side * math.pi / 2))
             pygame.draw.rect(self.screen, (30, 30, 30),
-                             (roue_x - roue_width, roue_y - roue_height,
-                              roue_width * 2, roue_height * 2))
+                             (rx - roue_w, ry - roue_h, roue_w * 2, roue_h * 2))
             pygame.draw.rect(self.screen, (60, 60, 60),
-                             (roue_x - roue_width + 2, roue_y - roue_height + 2,
-                              roue_width * 2 - 4, roue_height * 2 - 4))
+                             (rx - roue_w + 2, ry - roue_h + 2,
+                              roue_w * 2 - 4, roue_h * 2 - 4))
 
         # Capteurs
         for s_angle, s_dist, s_color in [
@@ -199,33 +281,32 @@ class VuePygame:
             self.screen.blit(glow, (sx - 10, sy - 10))
             pygame.draw.circle(self.screen, s_color, (sx, sy), 4)
 
-        # Flèche de direction
-        arrow_length = r * 0.6
-        arrow_x = x + round(arrow_length * math.cos(angle))
-        arrow_y = y - round(arrow_length * math.sin(angle))
-        arrow_points = [
-            (arrow_x, arrow_y),
-            (arrow_x - round(r * 0.3 * math.cos(angle - math.pi / 6)),
-             arrow_y + round(r * 0.3 * math.sin(angle - math.pi / 6))),
-            (arrow_x - round(r * 0.3 * math.cos(angle + math.pi / 6)),
-             arrow_y + round(r * 0.3 * math.sin(angle + math.pi / 6))),
+        # Flèche direction
+        al = r * 0.6
+        ax = x + round(al * math.cos(angle))
+        ay = y - round(al * math.sin(angle))
+        arrow = [
+            (ax, ay),
+            (ax - round(r * 0.3 * math.cos(angle - math.pi / 6)),
+             ay + round(r * 0.3 * math.sin(angle - math.pi / 6))),
+            (ax - round(r * 0.3 * math.cos(angle + math.pi / 6)),
+             ay + round(r * 0.3 * math.sin(angle + math.pi / 6))),
         ]
-        pygame.draw.polygon(self.screen, (255, 50, 50), arrow_points)
-        pygame.draw.polygon(self.screen, (150, 0, 0), arrow_points, 2)
+        pygame.draw.polygon(self.screen, (255, 50, 50), arrow)
+        pygame.draw.polygon(self.screen, (150, 0, 0), arrow, 2)
 
         # Particules de vitesse
         if hasattr(robot.moteur, 'v') and abs(robot.moteur.v) > 0.1:
             for i in range(min(5, int(abs(robot.moteur.v) * 3))):
-                offset_dist = -r * (1 + i * 0.3)
-                particle_x = x + round(offset_dist * math.cos(angle))
-                particle_y = y - round(offset_dist * math.sin(angle))
-                alpha = 255 - i * 50
-                ps = pygame.Surface((6, 6), pygame.SRCALPHA)
-                pygame.draw.circle(ps, (150, 200, 255, alpha), (3, 3), 3)
-                self.screen.blit(ps, (particle_x - 3, particle_y - 3))
+                od  = -r * (1 + i * 0.3)
+                ppx = x + round(od * math.cos(angle))
+                ppy = y - round(od * math.sin(angle))
+                ps  = pygame.Surface((6, 6), pygame.SRCALPHA)
+                pygame.draw.circle(ps, (150, 200, 255, 255 - i * 50), (3, 3), 3)
+                self.screen.blit(ps, (ppx - 3, ppy - 3))
 
     # ------------------------------------------------------------------
-    # Obstacles
+    # Obstacles (inchangé)
     # ------------------------------------------------------------------
 
     def dessiner_obstacle(self, obstacle) -> None:
@@ -241,7 +322,7 @@ class VuePygame:
                              (px - lw // 2, py - lh // 2, lw, lh))
 
     # ------------------------------------------------------------------
-    # Utilitaires pygame
+    # Utilitaires pygame (inchangé)
     # ------------------------------------------------------------------
 
     def gerer_evenements(self) -> bool:

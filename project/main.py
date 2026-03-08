@@ -5,13 +5,11 @@ from project.robot.modele.robot_mobile import RobotMobile, EtatRobot
 from project.robot.modele.moteur import MoteurDifferentiel
 from project.robot.controleur.controleur import ControleurClavierPygame
 from project.robot.vue.vue import VuePygame
-
+from project.robot.modele.grille_occupation import GrilleOccupation
+from project.robot.controleur.planificateur_a_star import PlanificateurAStar
+from project.robot.controleur.controleur_pid import ControleurPID
 
 def main_autonome():
-    """
-    Mode autonome : le robot navigue seul vers le paquet puis le dépôt.
-    Utile pour valider la Phase 1 avant l'algorithme génétique.
-    """
     # ── Environnement ────────────────────────────────────────────────────
     env = Environnement(
         largeur=15, hauteur=15,
@@ -24,7 +22,11 @@ def main_autonome():
     env.ajouter_obstacle(ObstacleRectangulaire(-4, -2, 2, 3))
     env.ajouter_obstacle(ObstacleRectangulaire(0, -4, 5, 1))
 
-    # ── Robot avec ses gènes ─────────────────────────────────────────────
+    # ── Grille + Planificateur ───────────────────────────────────────────
+    grille        = GrilleOccupation.construct(env, resolution=0.25)
+    planificateur = PlanificateurAStar(grille)
+
+    # ── Robot ────────────────────────────────────────────────────────────
     robot = RobotMobile(
         moteur=MoteurDifferentiel(),
         rayon=0.5,
@@ -33,36 +35,40 @@ def main_autonome():
         autonomie=8000.0,
     )
     env.ajouter_robot(robot)
-
-    # Démarre la mission depuis le dépôt
     robot.reset(*env.position_depot)
+
+    # ── Attache le PID et le planificateur au robot ──────────────────────
+    pid = ControleurPID(v_max=robot.vitesse_max)
+    robot._pid           = pid
+    robot._planificateur = planificateur
+
+    # Premier chemin vers le paquet
+    chemin = planificateur.trouver_chemin(env.position_depot, env.position_paquet)
+    pid.set_chemin(chemin)
 
     # ── Vue ──────────────────────────────────────────────────────────────
     vue = VuePygame(largeur=800, hauteur=800, scale=50)
 
-    # ── Boucle principale ────────────────────────────────────────────────
     running = True
-    dt = 0.05   # pas de temps plus petit = navigation plus fluide
+    dt = 0.05
 
     while running:
         running = vue.gerer_evenements()
-        env.mise_a_jour(dt)
+        env.mise_a_jour_autonome(dt)   # ← ici le changement
         vue.dessiner(env)
         vue.limiter_fps(60)
 
-        # Arrêt automatique quand la mission est terminée
         if robot.etat in (EtatRobot.LIVRE, EtatRobot.EN_PANNE):
             print("\n── Simulation terminée ──")
             m = robot.metriques()
-            print(f"  Succès        : {m['succes']}")
-            print(f"  Pas effectués : {m['pas_effectues']}")
-            print(f"  Énergie conso : {m['energie_consommee']:.1f} J")
-            print(f"  Coût final    : {m['cout']:.2f}")
-            pygame.time.wait(3000)   # Affiche le résultat 3 secondes
+            print(f"  Succès         : {m['succes']}")
+            print(f"  Distance       : {m['distance_parcourue']:.1f} m")
+            print(f"  Énergie conso  : {m['energie_consommee']:.1f} J")
+            print(f"  Coût final     : {m['cout']:.2f}")
+            pygame.time.wait(3000)
             running = False
 
     vue.fermer()
-
 
 def main_manuel():
     """
