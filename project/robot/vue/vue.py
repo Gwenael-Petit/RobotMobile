@@ -23,8 +23,9 @@ class VuePygame:
     """Vue graphique pygame."""
 
     # ── Couleurs ─────────────────────────────────────────────────────────
-    FOND          = (245, 245, 240)
-    GRILLE        = (220, 220, 215)
+    FOND          = (28, 28, 32)     
+    GRILLE        = (45, 45, 52)        
+    GRILLE_MAJOR  = (60, 60, 70)
     CHEMIN        = (80, 160, 255)      # bleu clair — chemin A*
     WAYPOINT      = (50, 120, 220)      # bleu foncé — points du chemin
     PAQUET        = (255, 180, 0)       # orange
@@ -104,19 +105,19 @@ class VuePygame:
         if idx < len(chemin):
             px_robot, py_robot = self.convertir_coordonnees(robot.x, robot.y)
             px_next,  py_next  = self.convertir_coordonnees(*chemin[idx])
-            pygame.draw.line(self.screen, self.CHEMIN,
+            pygame.draw.line(self.screen, robot.couleur if hasattr(robot, 'couleur') else self.CHEMIN,
                              (px_robot, py_robot), (px_next, py_next), 2)
 
         # Reste du chemin
         for i in range(max(idx, 1), len(chemin)):
             p1 = self.convertir_coordonnees(*chemin[i - 1])
             p2 = self.convertir_coordonnees(*chemin[i])
-            pygame.draw.line(self.screen, self.CHEMIN, p1, p2, 2)
+            pygame.draw.line(self.screen, robot.couleur if hasattr(robot, 'couleur') else self.CHEMIN, p1, p2, 2)
 
         # Waypoints
         for i in range(idx, len(chemin)):
             px, py = self.convertir_coordonnees(*chemin[i])
-            pygame.draw.circle(self.screen, self.WAYPOINT, (px, py), 3)
+            pygame.draw.circle(self.screen, robot.couleur if hasattr(robot, 'couleur') else self.WAYPOINT, (px, py), 3)
 
     # ------------------------------------------------------------------
     # 2. Barre d'énergie + état ← NOUVEAU
@@ -159,10 +160,22 @@ class VuePygame:
         if not environnement.robots:
             return
 
-        padding = 8
-        lh      = 18
-        x0      = 10
-        y0      = 10   # en haut à gauche
+        # Zone de simulation = 800px, HUD à droite
+        zone_sim  = 800
+        padding   = 10
+        lh        = 18
+        w         = self.largeur - zone_sim - padding * 16
+        x0        = zone_sim + w/2 + padding * 4
+        y0        = padding
+
+        # Séparateur vertical
+        pygame.draw.line(self.screen, (60, 60, 70),
+                        (zone_sim, 0), (zone_sim, self.hauteur), 2)
+
+        # Titre colonne
+        titre = self.font_md.render("ROBOTS", True, (150, 150, 170))
+        self.screen.blit(titre, (x0 + w // 2 - titre.get_width() // 2, y0))
+        y0 += 30
 
         for i, robot in enumerate(environnement.robots):
             couleur = getattr(robot, 'couleur', (220, 220, 220))
@@ -170,16 +183,15 @@ class VuePygame:
             lignes  = [
                 f"{label}",
                 f"Etat    : {robot.etat.name}",
-                f"Vitesse : {robot.vitesse_max:.1f} m/s",       # ← ici
-                f"Charge  : {robot.capacite_charge} kg",        # ← ici
-                f"Autonom : {robot.autonomie:.0f} J",           # ← ici
+                f"Vitesse : {robot.vitesse_max:.1f} m/s",
+                f"Charge  : {robot.capacite_charge} kg",
+                f"Autonom : {robot.autonomie:.0f} J",
                 f"Energie : {robot.energie_restante:.0f}/{robot.autonomie:.0f} J",
                 f"Colis   : {robot.colis_livres}/{robot.colis_a_livrer}",
-                f"Cout    : {robot.calculer_cout():.1f}",
                 f"Temps   : {robot.temps_mission:.1f} s",
+                f"Cout    : {robot.calculer_cout():.1f}",
             ]
 
-            w = 220
             h = padding * 2 + lh * len(lignes)
 
             surf = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -192,7 +204,7 @@ class VuePygame:
                 texte = self.font_sm.render(ligne, True, c)
                 self.screen.blit(texte, (x0 + padding, y0 + padding + j * lh))
 
-            y0 += h + 8   # empile les HUD verticalement
+            y0 += h + 8
 
     # ------------------------------------------------------------------
     # Paquet & Dépôt
@@ -202,42 +214,80 @@ class VuePygame:
         for i, pos in enumerate(environnement.positions_colis):
             px, py  = self.convertir_coordonnees(*pos)
             taille  = round(0.4 * self.scale)
-            
-            # Grisé si déjà livré (on estime via le robot le plus avancé)
+
             max_livres = max((r.colis_livres for r in environnement.robots), default=0)
             deja_livre = max_livres > i
-            
-            couleur = (180, 180, 180) if deja_livre else self.PAQUET
-            contour = (100, 100, 100) if deja_livre else (120, 80, 0)
+
+            if deja_livre:
+                # Caisse vide/ouverte
+                couleur = (60, 45, 25)
+                contour = (80, 65, 40)
+            else:
+                # Caisse pleine en bois
+                couleur = (160, 110, 50)
+                contour = (200, 150, 70)
 
             rect = pygame.Rect(px - taille, py - taille, taille * 2, taille * 2)
-            pygame.draw.rect(self.screen, couleur, rect, border_radius=4)
-            pygame.draw.rect(self.screen, contour, rect, 2, border_radius=4)
-            label = self.font_sm.render(str(i + 1), True, (80, 40, 0))
-            self.screen.blit(label, (px - label.get_width() // 2,
-                                    py - label.get_height() // 2))
+            pygame.draw.rect(self.screen, couleur, rect, border_radius=2)
+            # Planches horizontales
+            for dy in [-taille // 3, taille // 3]:
+                pygame.draw.line(self.screen, contour,
+                                (px - taille, py + dy), (px + taille, py + dy), 1)
+            # Planches verticales
+            pygame.draw.line(self.screen, contour, (px, py - taille), (px, py + taille), 1)
+            # Contour
+            pygame.draw.rect(self.screen, contour, rect, 2, border_radius=2)
+            # Numéro
+            label = self.font_sm.render(str(i + 1), True, (230, 200, 140) if not deja_livre else (80, 70, 50))
+            self.screen.blit(label, (px - label.get_width() // 2, py - label.get_height() // 2))
 
     def _dessiner_depot(self, environnement: "Environnement") -> None:
         px, py = self.convertir_coordonnees(*environnement.position_depot)
-        rayon  = round(0.5 * self.scale)
-        pygame.draw.circle(self.screen, self.DEPOT, (px, py), rayon)
-        pygame.draw.circle(self.screen, (0, 120, 60), (px, py), rayon, 2)
-        label = self.font_sm.render("D", True, (0, 60, 30))
-        self.screen.blit(label, (px - label.get_width() // 2,
-                                  py - label.get_height() // 2))
+        rayon  = round(0.7 * self.scale)
+
+        # Zone au sol (rayures jaunes/noires style sécurité)
+        for i in range(8):
+            angle_start = i * 45
+            color = (220, 180, 0) if i % 2 == 0 else (30, 30, 35)
+            pygame.draw.arc(self.screen, color,
+                            (px - rayon, py - rayon, rayon * 2, rayon * 2),
+                            math.radians(angle_start),
+                            math.radians(angle_start + 45), rayon)
+
+        # Cercle central
+        pygame.draw.circle(self.screen, (40, 40, 48), (px, py), round(rayon * 0.6))
+        pygame.draw.circle(self.screen, (200, 160, 0), (px, py), round(rayon * 0.6), 2)
+        label = self.font_md.render("D", True, (220, 180, 0))
+        self.screen.blit(label, (px - label.get_width() // 2, py - label.get_height() // 2))
 
     # ------------------------------------------------------------------
     # Grille de fond
     # ------------------------------------------------------------------
 
     def _dessiner_grille(self, environnement: "Environnement") -> None:
+        # Lignes mineures (tous les 1m)
         for x in range(-environnement.largeur // 2, environnement.largeur // 2 + 1):
             px, _ = self.convertir_coordonnees(x, 0)
-            pygame.draw.line(self.screen, self.GRILLE, (px, 0), (px, self.hauteur))
+            pygame.draw.line(self.screen, self.GRILLE, (px, 0), (px, self.hauteur), 1)
         for y in range(-environnement.hauteur // 2, environnement.hauteur // 2 + 1):
             _, py = self.convertir_coordonnees(0, y)
-            pygame.draw.line(self.screen, self.GRILLE, (0, py), (self.largeur, py))
+            pygame.draw.line(self.screen, self.GRILLE, (0, py), (self.largeur, py), 1)
 
+        # Lignes majeures (tous les 5m) plus épaisses
+        for x in range(-environnement.largeur // 2, environnement.largeur // 2 + 1, 5):
+            px, _ = self.convertir_coordonnees(x, 0)
+            pygame.draw.line(self.screen, self.GRILLE_MAJOR, (px, 0), (px, self.hauteur), 2)
+        for y in range(-environnement.hauteur // 2, environnement.hauteur // 2 + 1, 5):
+            _, py = self.convertir_coordonnees(0, y)
+            pygame.draw.line(self.screen, self.GRILLE_MAJOR, (0, py), (self.largeur, py), 2)
+
+        # Bordure du hangar
+        marge_x = self.convertir_coordonnees(-environnement.largeur // 2, 0)[0]
+        marge_y = self.convertir_coordonnees(0, environnement.hauteur // 2)[1]
+        larg_px  = environnement.largeur * self.scale
+        haut_px  = environnement.hauteur * self.scale
+        pygame.draw.rect(self.screen, (100, 100, 120),
+                        (marge_x, marge_y, larg_px, haut_px), 3)
     # ------------------------------------------------------------------
     # Robot (inchangé — ton rendu original)
     # ------------------------------------------------------------------
@@ -254,6 +304,7 @@ class VuePygame:
             for i in range(len(points) - 1):
                 alpha  = int(180 * (i / len(points)))
                 couleur = (alpha // 3, alpha // 2, min(alpha + 80, 255))
+                couleur = robot.couleur if hasattr(robot, 'couleur') else couleur
                 pygame.draw.line(self.screen, couleur,
                                  points[i], points[i + 1], 2)
 
@@ -333,14 +384,44 @@ class VuePygame:
     def dessiner_obstacle(self, obstacle) -> None:
         if isinstance(obstacle, ObstacleCirculaire):
             px, py = self.convertir_coordonnees(obstacle.x, obstacle.y)
-            pygame.draw.circle(self.screen, obstacle.couleur,
-                               (px, py), round(obstacle.rayon * self.scale))
+            r      = round(obstacle.rayon * self.scale)
+            # Corps
+            pygame.draw.circle(self.screen, (70, 70, 80), (px, py), r)
+            # Reflet
+            pygame.draw.circle(self.screen, (90, 90, 100), (px, py), r, 3)
+            # Hachures diagonales pour effet acier
+            for i in range(-r, r, 8):
+                x1 = max(px - r, px + i)
+                x2 = min(px + r, px + i + r)
+                y1 = py - r + max(0, -i)
+                y2 = py + r - max(0, i)
+                if x1 < x2:
+                    pygame.draw.line(self.screen, (55, 55, 65), (x1, y1), (x2, y2), 1)
+            pygame.draw.circle(self.screen, (100, 100, 115), (px, py), r, 2)
+
         elif isinstance(obstacle, ObstacleRectangulaire):
             px, py = self.convertir_coordonnees(obstacle.x, obstacle.y)
-            lw = round(obstacle.largeur * self.scale)
-            lh = round(obstacle.hauteur * self.scale)
-            pygame.draw.rect(self.screen, obstacle.couleur,
-                             (px - lw // 2, py - lh // 2, lw, lh))
+            lw     = round(obstacle.largeur * self.scale)
+            lh     = round(obstacle.hauteur * self.scale)
+            rect   = pygame.Rect(px - lw // 2, py - lh // 2, lw, lh)
+            # Corps
+            pygame.draw.rect(self.screen, (60, 62, 70), rect)
+            # Hachures
+            for i in range(0, lw + lh, 10):
+                x1 = px - lw // 2 + i
+                y1 = py - lh // 2
+                x2 = px - lw // 2
+                y2 = py - lh // 2 + i
+                pygame.draw.line(self.screen, (50, 52, 60),
+                                (min(x1, px + lw // 2), max(y1, py - lh // 2)),
+                                (max(x2, px - lw // 2), min(y2, py + lh // 2)), 1)
+            # Contour métallique
+            pygame.draw.rect(self.screen, (100, 105, 120), rect, 2)
+            # Coins boulonnés
+            for cx, cy in [(rect.left + 4, rect.top + 4), (rect.right - 4, rect.top + 4),
+                        (rect.left + 4, rect.bottom - 4), (rect.right - 4, rect.bottom - 4)]:
+                pygame.draw.circle(self.screen, (120, 120, 135), (cx, cy), 3)
+                pygame.draw.circle(self.screen, (80, 80, 95), (cx, cy), 3, 1)
 
     # ------------------------------------------------------------------
     # Utilitaires pygame (inchangé)

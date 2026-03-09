@@ -283,10 +283,6 @@ class Environnement:
             self.mise_a_jour_autonome(dt)
             nb_steps += 1
 
-        print(f"  [DEBUG] steps={nb_steps}/{max_steps}, etat={robot.etat.name}, "
-            f"distance={robot.distance_parcourue:.1f}, "
-            f"cout={robot.calculer_cout():.1f}")
-
         return robot.metriques()
 
     # ------------------------------------------------------------------

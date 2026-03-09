@@ -199,7 +199,7 @@ class RobotMobile:
     def calculer_cout(self) -> float:
         W_TEMPS    = 1.0
         W_ENERGIE  = 0.05    
-        W_CHARGE   = 8.0     
+        W_CHARGE   = 20.0     
         PENALITE   = 100_000.0
 
         if self.etat == EtatRobot.EN_PANNE:

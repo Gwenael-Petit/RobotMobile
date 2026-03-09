@@ -20,18 +20,27 @@ def creer_environnement() -> Environnement:
     env = Environnement(
         largeur=15, hauteur=15,
         positions_colis=[
-            ( 6.0,  6.0),
-            (-4.0,  5.0),
-            ( 5.0, -3.0),
-            ( 0.0,  6.0),
-            (-5.0,  2.0),
+            ( 5.0,  3.0),   # devant rack droite
+            (-5.0,  3.0),   # devant rack gauche
+            ( 0.0,  2.0),   # devant rack centre
+            ( 5.0, -0.5),   # couloir droite
+            (-2.5, 5.5),   # couloir gauche
         ],
-        position_depot=(-5.0, -5.0),
+        position_depot=(-5.0, -5.5),
     )
-    env.ajouter_obstacle(ObstacleCirculaire(3, 3, 1.0))
-    env.ajouter_obstacle(ObstacleCirculaire(-2, 4, 0.5))
-    env.ajouter_obstacle(ObstacleRectangulaire(-4, -2, 2, 3))
-    env.ajouter_obstacle(ObstacleRectangulaire(0, -4, 5, 1))
+    # Racks — bord inférieur à y=4.0, colis à y=2.0 → 1.5m de marge
+    env.ajouter_obstacle(ObstacleRectangulaire( 5.0,  5.5, 1.5, 3.0))
+    env.ajouter_obstacle(ObstacleRectangulaire(-5.0,  5.5, 1.5, 3.0))
+    env.ajouter_obstacle(ObstacleRectangulaire( 0.0,  5.5, 1.5, 3.0))
+    env.ajouter_obstacle(ObstacleRectangulaire( -5.0, -1.0, 1.0, 3.0))
+
+    # Piliers
+    env.ajouter_obstacle(ObstacleCirculaire( 2.5,  0.0, 0.4))
+    env.ajouter_obstacle(ObstacleCirculaire(-2.5,  0.0, 0.4))
+    env.ajouter_obstacle(ObstacleCirculaire( 2.5, -4.0, 0.4))
+
+    # Séparateur central
+    env.ajouter_obstacle(ObstacleRectangulaire(0.0, -1.5, 0.5, 4.0))
     return env
 
 
@@ -66,12 +75,27 @@ def rejouer_robots(meilleur, autres, env, planificateur) -> None:
         env.ajouter_robot(robot)
         robots.append(robot)
 
-    print(f"[DEBUG] Nombre de robots : {len(env.robots)}")
 
-    vue     = VuePygame(largeur=800, hauteur=800, scale=50)
+    vue     = VuePygame(largeur=1200, hauteur=820, scale=50)
     running = True
     dt      = 0.05
+    pret = False
+    while not pret:
+        running = vue.gerer_evenements()
+        if not running:
+            vue.fermer()
+            return
 
+        # Affiche message d'attente
+        vue.dessiner(env)
+        msg = vue.font_md.render("Appuyez sur ESPACE pour lancer", True, (220, 220, 100))
+        vue.screen.blit(msg, (400 - msg.get_width() // 2, vue.hauteur // 2))
+        pygame.display.flip()
+        vue.limiter_fps(60)
+
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                pret = True
     while running:
         running = vue.gerer_evenements()
 
@@ -83,79 +107,114 @@ def rejouer_robots(meilleur, autres, env, planificateur) -> None:
         vue.limiter_fps(60)
 
         if all(r.etat in (EtatRobot.LIVRE, EtatRobot.EN_PANNE) for r in robots):
-            pygame.time.wait(10000)
-            running = False
+            running = vue.gerer_evenements()
 
     vue.fermer()
 
 
+import pickle
+import os
+
+SAUVEGARDE = "population.pkl"
+
+def sauvegarder_population(ag: AlgorithmeGenetique) -> None:
+    with open(SAUVEGARDE, "wb") as f:
+        pickle.dump({
+            "population":        ag.population,
+            "meilleur_individu": ag.meilleur_individu,
+        }, f)
+    print(f"Population sauvegardée dans {SAUVEGARDE}")
+
+def charger_population() -> dict | None:
+    if not os.path.exists(SAUVEGARDE):
+        return None
+    with open(SAUVEGARDE, "rb") as f:
+        return pickle.load(f)
+    
+
 def main_genetique():
-    #  Environnement & planificateur 
     env           = creer_environnement()
-    grille        = GrilleOccupation.construct(env,
-                                                          resolution=0.25,
-                                                          marge=0.8)
+    grille        = GrilleOccupation.construct(env, resolution=0.25, marge=0.8)
     planificateur = PlanificateurAStar(grille)
 
-    #  Algorithme génétique 
-    ag = AlgorithmeGenetique(
-        taille_population = 15,
-        nb_generations    = 20,
-        taux_mutation     = 0.2,
-        taux_croisement   = 0.8,
-        taille_tournoi    = 3,
-        elitisme          = 2,
-    )
+    # ── Menu principal ───────────────────────────────────────────────
+    sauvegarde = charger_population()
 
-    print("╔══════════════════════════════════════════╗")
-    print("║     OPTIMISATION — ALGORITHME GÉNÉTIQUE  ║")
-    print("╚══════════════════════════════════════════╝")
-    print(f"Population : {ag.taille_population} individus")
-    print(f"Générations: {ag.nb_generations}")
-    print(f"Mutation   : {ag.taux_mutation * 100:.0f}%")
-    print()
+    if sauvegarde:
+        print("\nSauvegarde détectée !")
+        print("  [1] Relancer l'algorithme génétique")
+        print("  [2] Rejouer la dernière visualisation")
+        choix = input("Choix : ").strip()
+    else:
+        choix = "1"
 
-    meilleur = ag.evoluer(env, planificateur)
+    if choix == "1":
+        ag = AlgorithmeGenetique(
+            taille_population = 15,
+            nb_generations    = 20,
+            taux_mutation     = 0.2,
+            taux_croisement   = 0.8,
+            taille_tournoi    = 3,
+            elitisme          = 2,
+        )
 
-    #  Rapport 
-    ag.afficher_rapport()
+        print("╔══════════════════════════════════════════╗")
+        print("║     OPTIMISATION — ALGORITHME GÉNÉTIQUE  ║")
+        print("╚══════════════════════════════════════════╝")
+        print(f"Population : {ag.taille_population} individus")
+        print(f"Générations: {ag.nb_generations}")
+        print(f"Mutation   : {ag.taux_mutation * 100:.0f}%")
+        print()
 
-    #  Relecture visuelle du meilleur robot 
-    population_triee = sorted(ag.population, key=lambda ind: ind.fitness)
-    n = len(population_triee)
-    
-    # Cherche un individu pour chaque capacite_charge différente (1, 2, 3, 4, 5)
-    vus = {ag.meilleur_individu.capacite_charge}
-    autres = []
-    for ind in population_triee:
-        if ind.capacite_charge not in vus:
-            autres.append(ind)
-            vus.add(ind.capacite_charge)
-        if len(autres) == 3:
-            break
-    
-    # Si pas assez de diversité, complète avec n//4, n//2, -1
-    if len(autres) < 3:
-        fallback = [population_triee[n // 4], population_triee[n // 2], population_triee[-10]]
-        for ind in fallback:
+        meilleur = ag.evoluer(env, planificateur)
+        ag.afficher_rapport()
+        sauvegarder_population(ag)
+
+        population_triee = sorted(ag.population, key=lambda ind: ind.fitness)
+        n = len(population_triee)
+        vus = {ag.meilleur_individu.capacite_charge}
+        autres = []
+        for ind in population_triee:
+            if ind.capacite_charge not in vus:
+                autres.append(ind)
+                vus.add(ind.capacite_charge)
             if len(autres) == 3:
                 break
-            if ind not in autres:
+        if len(autres) < 3:
+            fallback = [population_triee[n // 4], population_triee[n // 2], population_triee[-1]]
+            for ind in fallback:
+                if len(autres) == 3:
+                    break
+                if ind not in autres:
+                    autres.append(ind)
+
+    else:
+        meilleur = sauvegarde["meilleur_individu"]
+        population_triee = sorted(sauvegarde["population"], key=lambda ind: ind.fitness)
+        n = len(population_triee)
+        vus = {meilleur.capacite_charge}
+        autres = []
+        for ind in population_triee:
+            if ind.capacite_charge not in vus:
                 autres.append(ind)
-    rejouer_robots(meilleur, autres, env, planificateur)
+                vus.add(ind.capacite_charge)
+            if len(autres) == 3:
+                break
+        if len(autres) < 3:
+            fallback = [population_triee[n // 4], population_triee[n // 2], population_triee[-1]]
+            for ind in fallback:
+                if len(autres) == 3:
+                    break
+                if ind not in autres:
+                    autres.append(ind)
 
+    # ── Boucle de relecture ──────────────────────────────────────────
     while True:
-        print("\nQue voulez-vous faire ?")
-        print("  [1] Rejouer la visualisation")
+        rejouer_robots(meilleur, autres, env, planificateur)
+        print("\n  [1] Rejouer")
         print("  [2] Quitter")
-        choix = input("Choix : ").strip()
-
-        if choix == "1":
-            rejouer_robots(meilleur, autres, env, planificateur)
-        elif choix == "2":
+        if input("Choix : ").strip() != "1":
             break
-        else:
-            print("Choix invalide.")
 
 if __name__ == "__main__":
     main_genetique()
