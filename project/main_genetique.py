@@ -3,6 +3,8 @@ Phase 3 — Lancement de l'algorithme génétique.
 Lance l'optimisation, affiche la convergence et rejoue le meilleur robot.
 """
 
+from matplotlib import pyplot as plt
+import numpy as np
 import pygame
 from project.robot.modele.environnement import Environnement
 from project.robot.modele.obstacle import ObstacleCirculaire, ObstacleRectangulaire
@@ -131,6 +133,69 @@ def charger_population() -> dict | None:
     with open(SAUVEGARDE, "rb") as f:
         return pickle.load(f)
     
+from mpl_toolkits.mplot3d import Axes3D
+
+def afficher_region_faisable_3d(ag: AlgorithmeGenetique, env, planificateur) -> None:
+    print("Calcul de la région faisable 3D (patience)...")
+
+    faisables = [ind for ind in ag.population if ind.fitness < 100_000]
+    
+    points_v    = [ind.vitesse_max     for ind in faisables]
+    points_c    = [ind.capacite_charge for ind in faisables]
+    points_a    = [ind.autonomie       for ind in faisables]
+    points_cout = [ind.fitness         for ind in faisables]
+
+    # ── Figure ────────────────────────────────────────────────────────
+    fig = plt.figure(figsize=(12, 8))
+    fig.patch.set_facecolor('#1c1c20')
+    ax  = fig.add_subplot(111, projection='3d')
+    ax.set_facecolor('#1c1c20')
+
+    # Nuage de points coloré par coût
+    sc = ax.scatter(points_v, points_c, points_a,
+                    c=points_cout, cmap='plasma',
+                    s=40, alpha=0.7, zorder=3)
+
+    # Solution optimale — grosse croix jaune
+    ax.scatter([ag.meilleur_individu.vitesse_max],
+               [ag.meilleur_individu.capacite_charge],
+               [ag.meilleur_individu.autonomie],
+               color='#ffb400', s=300, marker='*',
+               zorder=10, label=f"Optimal (coût={ag.meilleur_individu.fitness:.1f})")
+
+    # Population finale
+    for ind in ag.population:
+        if ind.fitness < 100_000:
+            ax.scatter(ind.vitesse_max, ind.capacite_charge, ind.autonomie,
+                       color='#00c864', s=60, marker='^',
+                       alpha=0.5, zorder=5)
+
+    # Style
+    ax.set_xlabel('Vitesse max (m/s)', color='#aaaaaa', labelpad=8)
+    ax.set_ylabel('Capacité charge (kg)', color='#aaaaaa', labelpad=8)
+    ax.set_zlabel('Autonomie (J)', color='#aaaaaa', labelpad=8)
+    ax.set_title('Espace des solutions — région faisable',
+                 color='#dddddd', fontsize=13, pad=15)
+    ax.tick_params(colors='#aaaaaa')
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    ax.xaxis.pane.set_edgecolor('#333340')
+    ax.yaxis.pane.set_edgecolor('#333340')
+    ax.zaxis.pane.set_edgecolor('#333340')
+    ax.grid(True, color='#2d2d35', linewidth=0.5)
+    ax.legend(facecolor='#2a2a30', edgecolor='#444455',
+              labelcolor='#cccccc', fontsize=9)
+
+    cbar = plt.colorbar(sc, ax=ax, shrink=0.5, pad=0.1)
+    cbar.set_label('Coût', color='#aaaaaa')
+    plt.setp(cbar.ax.yaxis.get_ticklabels(), color='#aaaaaa')
+
+    plt.tight_layout()
+    plt.savefig('region_faisable_3d.png', dpi=150,
+                facecolor='#1c1c20', bbox_inches='tight')
+    print("Figure sauvegardée : region_faisable_3d.png")
+    plt.show()
 
 def main_genetique():
     env           = creer_environnement()
@@ -168,6 +233,7 @@ def main_genetique():
 
         meilleur = ag.evoluer(env, planificateur)
         ag.afficher_rapport()
+        afficher_region_faisable_3d(ag, env, planificateur)
         sauvegarder_population(ag)
 
         population_triee = sorted(ag.population, key=lambda ind: ind.fitness)

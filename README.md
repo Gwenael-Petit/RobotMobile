@@ -2,9 +2,16 @@
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![Pygame](https://img.shields.io/badge/pygame-2.0+-green.svg)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-Un simulateur de robotique mobile en 2D avec détection de collisions, visualisation temps-réel et architecture MVC. Supporte les robots différentiels et omnidirectionnels dans un environnement avec obstacles.
+Simulation de robots mobiles dans un entrepôt 2D. Un robot autonome doit récupérer des colis dispersés dans le hangar et les livrer à une zone de dépôt, en évitant les obstacles et en gérant son autonomie énergétique.
+
+Le projet intègre :
+
+- **Navigation autonome** : planification de chemin A* sur grille d'occupation, suivi de trajectoire par contrôleur PID
+- **Gestion énergétique** : consommation dynamique, détection de seuil critique et recharge automatique à la base
+- **Optimisation génétique** : algorithme génétique qui optimise 3 paramètres du robot (vitesse maximale, capacité de charge, autonomie) pour minimiser le coût de mission
+- **Visualisation temps réel** : rendu Pygame avec affichage du chemin A*, barres d'énergie, métriques et comparaison simultanée de 4 robots
+- **Analyse des résultats** : courbe de convergence et visualisation 3D de l'espace des solutions exploré
 
 ## Pour commencer
 
