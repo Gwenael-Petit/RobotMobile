@@ -280,9 +280,10 @@ class Environnement:
         for _ in range(max_steps):
             if robot.etat in (EtatRobot.LIVRE, EtatRobot.EN_PANNE):
                 break
-            self.mise_a_jour_autonome(dt)
+            self.mise_a_jour_autonome_robot(robot, dt)
             nb_steps += 1
 
+        print(robot.metriques())
         return robot.metriques()
 
     # ------------------------------------------------------------------

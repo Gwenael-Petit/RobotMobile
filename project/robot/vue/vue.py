@@ -180,16 +180,16 @@ class VuePygame:
         for i, robot in enumerate(environnement.robots):
             couleur = getattr(robot, 'couleur', (220, 220, 220))
             label   = getattr(robot, 'label',   f"Robot {i+1}")
-            lignes  = [
+            lignes = [
                 f"{label}",
                 f"Etat    : {robot.etat.name}",
                 f"Vitesse : {robot.vitesse_max:.1f} m/s",
                 f"Charge  : {robot.capacite_charge} kg",
                 f"Autonom : {robot.autonomie:.0f} J",
+                f"Prix    : {3.0 * robot.vitesse_max + 5.0 * robot.capacite_charge + 0.002 * robot.autonomie:.1f}/50.0",
                 f"Energie : {robot.energie_restante:.0f}/{robot.autonomie:.0f} J",
                 f"Colis   : {robot.colis_livres}/{robot.colis_a_livrer}",
-                f"Temps   : {robot.temps_mission:.1f} s",
-                f"Cout    : {robot.calculer_cout():.1f}",
+                f"Temps   : {robot.temps_mission:.1f} s"
             ]
 
             h = padding * 2 + lh * len(lignes)

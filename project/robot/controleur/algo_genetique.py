@@ -95,6 +95,7 @@ class AlgorithmeGenetique:
         self.historique_meilleur: list[float] = []   # meilleur fitness par génération
         self.historique_moyen:    list[float] = []   # fitness moyen par génération
         self.meilleur_individu:   Individu | None = None
+        self.historique_individus: list[Individu] = [] 
 
     # ------------------------------------------------------------------
     # Point d'entrée
@@ -124,6 +125,9 @@ class AlgorithmeGenetique:
             # Tri par fitness croissante (meilleur = plus petit coût)
             population.sort(key=lambda ind: ind.fitness)
 
+            # Ajoute les 3 meilleurs de cette génération
+            self.historique_individus.extend(copy.deepcopy(population[:3]))
+
             #  Statistiques 
             meilleur = population[0]
             moyen    = sum(i.fitness for i in population) / len(population)
@@ -147,6 +151,10 @@ class AlgorithmeGenetique:
             #  Nouvelle génération 
             population = self._nouvelle_generation(population)
             self.population = population
+            self.historique_individus = sorted(
+                self.historique_individus,
+                key=lambda ind: ind.fitness
+            )
 
         return self.meilleur_individu
 
@@ -293,7 +301,9 @@ class AlgorithmeGenetique:
         print(f"    vitesse_max      : {self.meilleur_individu.vitesse_max:.3f} m/s")
         print(f"    capacite_charge  : {self.meilleur_individu.capacite_charge:.3f} kg")
         print(f"    autonomie        : {self.meilleur_individu.autonomie:.0f} J")
-        print(f"    fitness (coût)   : {self.meilleur_individu.fitness:.2f}")
+        print(f"    fitness (temps)  : {self.meilleur_individu.fitness:.2f} s")
+        print(f"    budget consommé  : {0.05 * self.meilleur_individu.autonomie / 10 + 2.0 * self.meilleur_individu.capacite_charge:.2f} / 50.0")
+        print(f"    budget respecté  : {'OUI' if self.meilleur_individu.fitness < 100_000 else 'NON'}")
         print("─" * 55)
         print(f"  Convergence :")
         print(f"    Génération 1   → {self.historique_meilleur[0]:.2f}")

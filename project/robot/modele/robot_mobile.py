@@ -193,23 +193,30 @@ class RobotMobile:
             "energie_consommee" : self.energie_consommee_total,
             "nb_recharges"       : self.nb_recharges,
             "cout"              : self.calculer_cout(),
+            "temps_mission"     : self.temps_mission,
             "etat_final"        : self.etat.name,
         }
 
     def calculer_cout(self) -> float:
-        W_TEMPS    = 1.0
-        W_ENERGIE  = 0.05    
-        W_CHARGE   = 20.0     
-        PENALITE   = 100_000.0
+        PRIX_VITESSE  = 3.0   # moteurs puissants = cher
+        PRIX_CHARGE   = 5.0   # structure solide = cher
+        PRIX_AUTONOMIE = 0.002 # grosse batterie = cher
+        BUDGET        = 50.0
+        PENALITE      = 100_000.0
 
         if self.etat == EtatRobot.EN_PANNE:
             return PENALITE
         if self.etat != EtatRobot.LIVRE:
             return PENALITE
 
-        return (W_TEMPS  * self.temps_mission
-            + W_ENERGIE * self.energie_consommee_total
-            + W_CHARGE  * self.capacite_charge)
+        cout_robot = (PRIX_VITESSE   * self.vitesse_max
+                    + PRIX_CHARGE    * self.capacite_charge
+                    + PRIX_AUTONOMIE * self.autonomie)
+
+        if cout_robot > BUDGET:
+            return PENALITE + cout_robot
+
+        return self.temps_mission
 
     # ------------------------------------------------------------------
     # Utilitaires de classe

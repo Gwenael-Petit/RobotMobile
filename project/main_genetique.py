@@ -117,7 +117,7 @@ def rejouer_robots(meilleur, autres, env, planificateur) -> None:
 import pickle
 import os
 
-SAUVEGARDE = "population.pkl"
+SAUVEGARDE = "population_bis.pkl"
 
 def sauvegarder_population(ag: AlgorithmeGenetique) -> None:
     with open(SAUVEGARDE, "wb") as f:
@@ -236,7 +236,7 @@ def main_genetique():
         afficher_region_faisable_3d(ag, env, planificateur)
         sauvegarder_population(ag)
 
-        population_triee = sorted(ag.population, key=lambda ind: ind.fitness)
+        population_triee = sorted(ag.historique_individus, key=lambda ind: ind.fitness)
         n = len(population_triee)
         vus = {ag.meilleur_individu.capacite_charge}
         autres = []
