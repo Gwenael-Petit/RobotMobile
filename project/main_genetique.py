@@ -80,7 +80,7 @@ def rejouer_robots(meilleur, autres, env, planificateur) -> None:
 
     vue     = VuePygame(largeur=1200, hauteur=820, scale=50)
     running = True
-    dt      = 0.05
+    dt      = 0.03
     pret = False
     while not pret:
         running = vue.gerer_evenements()
@@ -124,6 +124,9 @@ def sauvegarder_population(ag: AlgorithmeGenetique) -> None:
         pickle.dump({
             "population":        ag.population,
             "meilleur_individu": ag.meilleur_individu,
+            "historique_individus": ag.historique_individus,
+            "historique_meilleur":  ag.historique_meilleur,
+            "historique_moyen":     ag.historique_moyen,
         }, f)
     print(f"Population sauvegardée dans {SAUVEGARDE}")
 
@@ -133,68 +136,83 @@ def charger_population() -> dict | None:
     with open(SAUVEGARDE, "rb") as f:
         return pickle.load(f)
     
-from mpl_toolkits.mplot3d import Axes3D
 
-def afficher_region_faisable_3d(ag: AlgorithmeGenetique, env, planificateur) -> None:
-    print("Calcul de la région faisable 3D (patience)...")
+def afficher_region_faisable_2d(ag: AlgorithmeGenetique, env, planificateur) -> None:
+    print("Calcul région faisable 2D...")
 
-    faisables = [ind for ind in ag.population if ind.fitness < 100_000]
-    
-    points_v    = [ind.vitesse_max     for ind in faisables]
-    points_c    = [ind.capacite_charge for ind in faisables]
-    points_a    = [ind.autonomie       for ind in faisables]
-    points_cout = [ind.fitness         for ind in faisables]
+    autonomie_fixe = ag.meilleur_individu.autonomie
+    vitesses = np.linspace(1.0, 10.0, 30)
+    charges  = np.arange(1, 6)
 
-    # ── Figure ────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(12, 8))
+    prix_ok  = np.zeros((len(charges), len(vitesses)), dtype=bool)
+
+    for i, c in enumerate(charges):
+        for j, v in enumerate(vitesses):
+            prix = 3.0 * v + 5.0 * int(c) + 0.001 * autonomie_fixe
+            prix_ok[i, j] = prix <= 50.0
+
+    # ── Figure ───────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(10, 6))
     fig.patch.set_facecolor('#1c1c20')
-    ax  = fig.add_subplot(111, projection='3d')
     ax.set_facecolor('#1c1c20')
+    ax.set_xlim(0.5, 10.5)
+    ax.set_ylim(0.5, 5.5)
 
-    # Nuage de points coloré par coût
-    sc = ax.scatter(points_v, points_c, points_a,
-                    c=points_cout, cmap='plasma',
-                    s=40, alpha=0.7, zorder=3)
+    # Zone faisable — bleu comme ton image de référence
+    ax.contourf(vitesses, charges, prix_ok.astype(float),
+                levels=[0.5, 1.5], colors=['#1a3a5c'], alpha=0.8)
 
-    # Solution optimale — grosse croix jaune
+    # Frontière budget
+    ax.contour(vitesses, charges, prix_ok.astype(float),
+               levels=[0.5], colors=['#4a9eff'], linewidths=2.0)
+
+    # Individus explorés — colorés par temps
+    faisables = [ind for ind in ag.historique_individus if ind.fitness < 100_000]
+    if faisables:
+        vx = [ind.vitesse_max     for ind in faisables]
+        vy = [ind.capacite_charge for ind in faisables]
+        vc = [ind.fitness         for ind in faisables]
+        sc = ax.scatter(vx, vy, c=vc, cmap='RdYlGn_r',
+                        s=60, alpha=0.8, zorder=5,
+                        edgecolors='white', linewidths=0.3)
+        cbar = plt.colorbar(sc, ax=ax)
+        cbar.set_label('Temps de mission (s)', color='#aaaaaa')
+        plt.setp(cbar.ax.yaxis.get_ticklabels(), color='#aaaaaa')
+        cbar.ax.yaxis.set_tick_params(color='#aaaaaa')
+
+    # Solution optimale
     ax.scatter([ag.meilleur_individu.vitesse_max],
                [ag.meilleur_individu.capacite_charge],
-               [ag.meilleur_individu.autonomie],
                color='#ffb400', s=300, marker='*',
-               zorder=10, label=f"Optimal (coût={ag.meilleur_individu.fitness:.1f})")
+               zorder=10,
+               label=f"Optimal — {ag.meilleur_individu.fitness:.1f}s")
 
-    # Population finale
-    for ind in ag.population:
-        if ind.fitness < 100_000:
-            ax.scatter(ind.vitesse_max, ind.capacite_charge, ind.autonomie,
-                       color='#00c864', s=60, marker='^',
-                       alpha=0.5, zorder=5)
+    # ── Style ────────────────────────────────────────────────────────
+    from matplotlib.patches import Patch
+    legendes = [
+        Patch(facecolor='#1a3a5c', edgecolor='#4a9eff', label='Région faisable (prix ≤ 50)'),
+        Patch(facecolor='#1c1c20', edgecolor='#555566', label='Hors budget'),
+    ]
+    ax.legend(handles=legendes + [
+        plt.scatter([], [], color='#ffb400', marker='*', s=150, label='Solution optimale'),
+        plt.scatter([], [], color='grey', s=40, label='Individus explorés'),
+    ], facecolor='#2a2a30', edgecolor='#444455',
+       labelcolor='#cccccc', fontsize=9)
 
-    # Style
-    ax.set_xlabel('Vitesse max (m/s)', color='#aaaaaa', labelpad=8)
-    ax.set_ylabel('Capacité charge (kg)', color='#aaaaaa', labelpad=8)
-    ax.set_zlabel('Autonomie (J)', color='#aaaaaa', labelpad=8)
-    ax.set_title('Espace des solutions — région faisable',
-                 color='#dddddd', fontsize=13, pad=15)
+    ax.set_xlabel('Vitesse max (m/s)', color='#aaaaaa', fontsize=11)
+    ax.set_ylabel('Capacité de charge (kg)', color='#aaaaaa', fontsize=11)
+    ax.set_title(f'Région faisable et solution optimale',
+                 color='#dddddd', fontsize=13)
+    ax.set_yticks(charges)
     ax.tick_params(colors='#aaaaaa')
-    ax.xaxis.pane.fill = False
-    ax.yaxis.pane.fill = False
-    ax.zaxis.pane.fill = False
-    ax.xaxis.pane.set_edgecolor('#333340')
-    ax.yaxis.pane.set_edgecolor('#333340')
-    ax.zaxis.pane.set_edgecolor('#333340')
-    ax.grid(True, color='#2d2d35', linewidth=0.5)
-    ax.legend(facecolor='#2a2a30', edgecolor='#444455',
-              labelcolor='#cccccc', fontsize=9)
-
-    cbar = plt.colorbar(sc, ax=ax, shrink=0.5, pad=0.1)
-    cbar.set_label('Coût', color='#aaaaaa')
-    plt.setp(cbar.ax.yaxis.get_ticklabels(), color='#aaaaaa')
+    for spine in ax.spines.values():
+        spine.set_color('#444455')
+    ax.grid(True, color='#2d2d35', linewidth=0.5, alpha=0.5)
 
     plt.tight_layout()
-    plt.savefig('region_faisable_3d.png', dpi=150,
+    plt.savefig('region_faisable_2d.png', dpi=150,
                 facecolor='#1c1c20', bbox_inches='tight')
-    print("Figure sauvegardée : region_faisable_3d.png")
+    print("Figure sauvegardée : region_faisable_2d.png")
     plt.show()
 
 def main_genetique():
@@ -209,6 +227,7 @@ def main_genetique():
         print("\nSauvegarde détectée !")
         print("  [1] Relancer l'algorithme génétique")
         print("  [2] Rejouer la dernière visualisation")
+        print("  [3] Afficher la région faisable 2D")
         choix = input("Choix : ").strip()
     else:
         choix = "1"
@@ -233,10 +252,13 @@ def main_genetique():
 
         meilleur = ag.evoluer(env, planificateur)
         ag.afficher_rapport()
-        afficher_region_faisable_3d(ag, env, planificateur)
+        afficher_region_faisable_2d(ag, env, planificateur)
         sauvegarder_population(ag)
 
-        population_triee = sorted(ag.historique_individus, key=lambda ind: ind.fitness)
+        population_triee = sorted(
+            [ind for ind in ag.historique_individus if ind.fitness < 100_000 and ind.fitness != meilleur.fitness],
+            key=lambda ind: ind.fitness
+        )
         n = len(population_triee)
         vus = {ag.meilleur_individu.capacite_charge}
         autres = []
@@ -253,10 +275,24 @@ def main_genetique():
                     break
                 if ind not in autres:
                     autres.append(ind)
+    elif choix == "3":
+            meilleur = sauvegarde["meilleur_individu"]
+            ag = AlgorithmeGenetique()   # ← crée un ag vide
+            ag.meilleur_individu    = sauvegarde["meilleur_individu"]
+            ag.population           = sauvegarde["population"]
+            ag.historique_individus = sauvegarde.get("historique_individus", sauvegarde["population"])
+            ag.historique_meilleur  = sauvegarde.get("historique_meilleur", [])
+            ag.historique_moyen     = sauvegarde.get("historique_moyen", [])
+            afficher_region_faisable_2d(ag, env, planificateur)
 
     else:
         meilleur = sauvegarde["meilleur_individu"]
-        population_triee = sorted(sauvegarde["population"], key=lambda ind: ind.fitness)
+        historique       = sauvegarde.get("historique_individus",
+                           sauvegarde["population"])
+        population_triee = sorted(
+            [ind for ind in historique if ind.fitness < 100_000 and ind.fitness != meilleur.fitness],
+            key=lambda ind: ind.fitness
+        )
         n = len(population_triee)
         vus = {meilleur.capacite_charge}
         autres = []

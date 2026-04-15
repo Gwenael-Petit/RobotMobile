@@ -283,7 +283,6 @@ class Environnement:
             self.mise_a_jour_autonome_robot(robot, dt)
             nb_steps += 1
 
-        print(robot.metriques())
         return robot.metriques()
 
     # ------------------------------------------------------------------
