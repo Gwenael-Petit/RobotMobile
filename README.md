@@ -30,8 +30,8 @@ Ce dont vous avez besoin pour exécuter le projet :
 1. Clonez le repository
 
 ```bash
-git clone https://github.com/votre-username/robot-simulator.git
-cd robot-simulator
+git clone https://github.com/Gwenael-Petit/RobotMobile.git
+cd RobotMobile
 ```
 
 1. Installez les dépendances
@@ -56,13 +56,12 @@ Pour lancer la simulation :
 python -m project.main
 ```
 
-### Contrôles
+### Enregistrer une nouvelle population
 
-* `↑` : Avancer
-* `↓` : Reculer
-* `←` : Tourner à gauche
-* `→` : Tourner à droite
-* `Espace` : Arrêt d'urgence
+Dans *main.py* changer le nom du fichier de sauvegarde:
+```python
+SAUVEGARDE = "population_oral.pkl"
+```
 
 ## Fabriqué avec
 
@@ -73,4 +72,4 @@ python -m project.main
 ## Auteurs
 
 * **Gwénaël PETIT** - [@Gwenael-Petit](https://github.com/Gwenael-Petit)
-* **Anita RIVOT** - [@username](https://github.com/username)
+* **Anita RIVOT** - [@username](https://github.com/AnitaRivt)

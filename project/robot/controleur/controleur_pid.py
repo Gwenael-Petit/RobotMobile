@@ -39,7 +39,7 @@ class ControleurPID:
         if self.est_arrive():
             return {"v": 0.0, "omega": 0.0}
 
-        # ── Waypoint courant ─────────────────────────────────────────────
+        # Waypoint courant
         xc, yc = self._chemin[self._index_waypoint]
 
         dx = xc - x
